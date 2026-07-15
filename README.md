@@ -68,3 +68,19 @@ PrimaryExpr   ::= IntegerLiteral
 
 FunctionCall  ::= Identifier "(" ArgumentList? ")"
 ArgumentList  ::= Expression ("," Expression)*
+
+## 🔨 Guide de compilation
+
+Commandes disponibles avec le CLI:
+
+- `cargo run -- compile sample.fc --emit-ir --out /tmp/sample.ll`
+- `cargo run -- compile sample.fc --emit-obj`
+- `cargo run -- compile sample.fc --emit-exe --out-exe /tmp/fc_sample`
+
+Exemple de flux complet:
+1. Générer l'IR: `--emit-ir`
+2. Générer un objet: `--emit-obj`
+3. Générer un exécutable: `--emit-exe`
+
+Le compilateur conserve la chaîne:
+`FunC -> LLVM IR -> objet objet (.o/.obj) -> exécutable natif`.
