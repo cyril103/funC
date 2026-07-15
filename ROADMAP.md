@@ -91,7 +91,7 @@ Faire de votre compilateur un outil en ligne de commande (CLI) utilisable par d'
 - [x] **Créer l'interface CLI en Rust** (avec `clap`)
   - [x] Permettre de spécifier le fichier d'entrée (`func compile main.fc`).
   - [x] Ajouter une option pour exporter l'IR LLVM textuelle sous forme de fichier `.ll`.
-- [ ] **Liaison (Linking) et exécutables natifs**
+- [x] **Liaison (Linking) et exécutables natifs**
   - [x] Compiler l'IR LLVM en code objet machine (fichier `.o` ou `.obj`).
   - [x] Appeler le linker du système (comme `lld`, `ld`, ou `link.exe`) pour lier le fichier objet avec la bibliothèque standard (libc) et produire l'exécutable final.
 - [ ] **Compilation croisée (Cross-Compilation)**

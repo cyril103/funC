@@ -160,10 +160,26 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &Option<String>) -> PathBuf
         .unwrap_or_else(|| format!("{}.o", default_stem(&args.input)));
 
     let ir_path = if let Some(path) = args.out.clone() {
-        PathBuf::from(path)
+        if args.emit_ir {
+            PathBuf::from(path)
+        } else {
+            let fallback = std::env::temp_dir().join(format!(
+                "func-{}-{}.ll",
+                default_stem(&args.input),
+                process::id()
+            ));
+            if let Err(err) = fs::write(&fallback, ir) {
+                eprintln!("Échec d'écriture IR temporaire {fallback:?}: {err}");
+                process::exit(1);
+            }
+            fallback
+        }
     } else {
-        let fallback =
-            std::env::temp_dir().join(format!("func-{}-{}.ll", default_stem(&args.input), process::id()));
+        let fallback = std::env::temp_dir().join(format!(
+            "func-{}-{}.ll",
+            default_stem(&args.input),
+            process::id()
+        ));
         if let Err(err) = fs::write(&fallback, ir) {
             eprintln!("Échec d'écriture IR temporaire {fallback:?}: {err}");
             process::exit(1);
@@ -171,33 +187,32 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &Option<String>) -> PathBuf
         fallback
     };
 
-    if ir_path.exists() {
-        let mut cmd = process::Command::new("llc");
-        cmd.arg("-filetype=obj");
-        cmd.arg("-o");
-        cmd.arg(&object_path);
-        if let Some(triple) = target {
-            cmd.arg(format!("-mtriple={triple}"));
-        }
-        cmd.arg(&ir_path);
-        let status = cmd.status();
+    let mut cmd = process::Command::new("llc");
+    cmd.arg("-filetype=obj");
+    cmd.arg("-o");
+    cmd.arg(&object_path);
+    if let Some(triple) = target {
+        cmd.arg(format!("-mtriple={triple}"));
+    }
+    cmd.arg(&ir_path);
+    let status = cmd.status();
 
-        match status {
-            Ok(exit) if exit.success() => {
-                println!("Objet écrit dans {object_path}");
-            }
-            Ok(exit) => {
-                eprintln!("Échec de llc (code de sortie: {exit})");
-                process::exit(1);
-            }
-            Err(err) => {
-                eprintln!("Impossible d'exécuter llc: {err}");
-                process::exit(1);
-            }
+    match status {
+        Ok(exit) if exit.success() => {
+            println!("Objet écrit dans {object_path}");
         }
-    } else {
-        eprintln!("Le fichier LLVM IR n'existe pas: {ir_path:?}");
-        process::exit(1);
+        Ok(exit) => {
+            eprintln!("Échec de llc (code de sortie: {exit})");
+            process::exit(1);
+        }
+        Err(err) => {
+            eprintln!("Impossible d'exécuter llc: {err}");
+            process::exit(1);
+        }
+    }
+
+    if args.out.is_none() && !args.emit_ir {
+        let _ = fs::remove_file(&ir_path);
     }
 
     PathBuf::from(object_path)
@@ -216,16 +231,17 @@ fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &Option<St
             }
         });
 
-    let linkers = ["clang", "cc"];
-    for linker in &linkers {
+    let linkers = vec!["clang", "cc"];
+
+    for linker in linkers {
         let mut cmd = process::Command::new(linker);
         cmd.arg(object_path.as_os_str());
-        if *linker == "clang" {
-            if let Some(triple) = target {
-                cmd.arg(format!("-target"));
-                cmd.arg(triple);
+            if linker == "clang" {
+                if let Some(triple) = target {
+                    cmd.arg("-target");
+                    cmd.arg(triple);
+                }
             }
-        }
         cmd.arg("-o");
         cmd.arg(&exe_path);
         let status = cmd.status();
@@ -244,7 +260,9 @@ fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &Option<St
         }
     }
 
-    eprintln!("Aucun linker disponible (clang/cc), impossible de produire un exécutable.");
+    eprintln!(
+        "Aucun linker disponible (clang/cc), impossible de produire un exécutable."
+    );
     process::exit(1);
 }
 
