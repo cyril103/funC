@@ -96,6 +96,10 @@ Aliases supportées:
 - `native` (triple de l’hôte)
 - `x86_64`, `aarch64` (`arm64`), `x86` (`i386`) pour des cibles courantes
 
+Lister les cibles et alias:
+
+- `cargo run -- list-targets`
+
 Comportement:
 - Objet: `obj` si la cible contient `windows`, sinon `o`.
 - Exécutable: `exe` si la cible contient `windows`, sinon sans suffixe.

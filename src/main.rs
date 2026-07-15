@@ -22,6 +22,8 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Compile(CompileArgs),
+    /// Affiche les cibles supportées et les alias reconnus
+    ListTargets,
 }
 
 #[derive(Debug, Args)]
@@ -98,7 +100,22 @@ fn main() {
 
     match cli.command {
         Commands::Compile(args) => run_compile(args),
+        Commands::ListTargets => list_targets(),
     }
+}
+
+fn list_targets() {
+    let host = default_host_target();
+    println!("Cible hôte (défaut): {host}");
+    println!("Alias reconnus:");
+    println!("  - x86_64  => x86_64-unknown-linux-gnu (Windows: x86_64-pc-windows-msvc)");
+    println!("  - amd64   => x86_64-unknown-linux-gnu (Windows: x86_64-pc-windows-msvc)");
+    println!("  - aarch64 => aarch64-unknown-linux-gnu (Windows: aarch64-pc-windows-msvc)");
+    println!("  - arm64   => aarch64-unknown-linux-gnu (Windows: aarch64-pc-windows-msvc)");
+    println!("  - x86     => i386-unknown-linux-gnu (Windows: i386-pc-windows-msvc)");
+    println!("  - i386    => i386-unknown-linux-gnu (Windows: i386-pc-windows-msvc)");
+    println!("  - native  => cible par défaut de l'hôte");
+    println!("Formats de triplet LLVM acceptés: arch-vendor-os (par ex: x86_64-pc-windows-msvc, aarch64-unknown-linux-gnu)");
 }
 
 fn run_compile(args: CompileArgs) {
