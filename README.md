@@ -84,3 +84,8 @@ Exemple de flux complet:
 
 Le compilateur conserve la chaîne:
 `FunC -> LLVM IR -> objet objet (.o/.obj) -> exécutable natif`.
+
+## ✅ Exemples de validation
+
+- `sample_if_else.fc` : valide `if/else` avec retour d'un même type dans chaque branche.
+- `sample_logic_shortcircuit.fc` : valide le court-circuit de `&&` et `||` (la partie droite peut contenir une expression non-safe qui ne doit pas être exécutée).

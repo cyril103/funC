@@ -1,0 +1,7 @@
+fn main() -> i64 {
+    let a: bool = false && ((1 / 0) == 0);
+    let b: bool = true || ((1 / 0) == 0);
+    let v1: i64 = if a { 1 } else { 2 };
+    let v2: i64 = if b { 3 } else { 4 };
+    v1 + v2
+}
