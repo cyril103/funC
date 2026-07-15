@@ -81,6 +81,7 @@ Traduire notre AST typé et validé en instructions LLVM IR en utilisant la bibl
   - [x] Traduire `alloc(taille)` en un appel à `malloc` puis convertir le pointeur retourné (`*i8` de LLVM) vers le type attendu.
   - [x] Traduire `free(ptr)` en appel à `free`.
   - [x] Traduire `store(val, ptr)` et `load(ptr)` en instructions de lecture/écriture mémoire LLVM (`load` / `store`).
+  - [x] Repasser le backend principal de l’émission `IR` de texte vers l’API `inkwell` (construction du module, fonctions, blocs, branches, constantes et appels externes), puis émettre l’`IR` final via `module.print_to_string()`.
 
 ---
 
