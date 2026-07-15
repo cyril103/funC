@@ -44,7 +44,7 @@ struct CompileArgs {
     #[arg(short, long)]
     out: Option<String>,
 
-    /// Compile l'IR LLVM textuelle vers un objet (.o)
+    /// Compile l'IR LLVM textuelle vers un objet (.o ou .obj selon la cible)
     #[arg(long)]
     emit_obj: bool,
 
@@ -157,7 +157,15 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &Option<String>) -> PathBuf
     let object_path = args
         .out_obj
         .clone()
-        .unwrap_or_else(|| format!("{}.o", default_stem(&args.input)));
+        .unwrap_or_else(|| {
+            let stem = default_stem(&args.input);
+            let extension = if is_windows_target(target.as_deref()) {
+                "obj"
+            } else {
+                "o"
+            };
+            format!("{}.{}", stem, extension)
+        });
 
     let ir_path = if let Some(path) = args.out.clone() {
         if args.emit_ir {
@@ -224,7 +232,7 @@ fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &Option<St
         .clone()
         .unwrap_or_else(|| {
             let stem = default_stem(&args.input);
-            if cfg!(windows) {
+            if is_windows_target(target.as_deref()) || cfg!(windows) {
                 format!("{stem}.exe")
             } else {
                 stem
@@ -264,6 +272,12 @@ fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &Option<St
         "Aucun linker disponible (clang/cc), impossible de produire un exécutable."
     );
     process::exit(1);
+}
+
+fn is_windows_target(target: Option<&str>) -> bool {
+    target
+        .map(|triple| triple.to_lowercase().contains("windows"))
+        .unwrap_or(false)
 }
 
 fn default_stem(input: &str) -> String {
