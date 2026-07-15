@@ -92,6 +92,6 @@ Faire de votre compilateur un outil en ligne de commande (CLI) utilisable par d'
   - [x] Ajouter une option pour exporter l'IR LLVM textuelle sous forme de fichier `.ll`.
 - [ ] **Liaison (Linking) et exécutables natifs**
   - [x] Compiler l'IR LLVM en code objet machine (fichier `.o` ou `.obj`).
-  - [ ] Appeler le linker du système (comme `lld`, `ld`, ou `link.exe`) pour lier le fichier objet avec la bibliothèque standard (libc) et produire l'exécutable final.
+  - [x] Appeler le linker du système (comme `lld`, `ld`, ou `link.exe`) pour lier le fichier objet avec la bibliothèque standard (libc) et produire l'exécutable final.
 - [ ] **Compilation croisée (Cross-Compilation)**
   - [ ] Ajouter des options CLI pour spécifier la cible (ex: `--target x86_64-pc-windows-msvc` ou `--target aarch64-unknown-linux-gnu`).
