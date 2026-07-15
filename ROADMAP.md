@@ -60,7 +60,7 @@ Traduire notre AST typé et validé en instructions LLVM IR en utilisant la bibl
 
 - [ ] **Configuration de LLVM**
   - [x] Initialiser le contexte LLVM, le Builder et le Module.
-  - [ ] Configurer la cible système par défaut (Target Machine).
+  - [x] Configurer la cible système par défaut (Target Machine).
 - [x] **Génération des types et fonctions**
   - [x] Traduire les types de FunC vers les types LLVM correspondants (`i32` de FunC -> `i32` de LLVM, `f64` -> `double`, etc.).
   - [x] Enregistrer la signature des fonctions dans le module LLVM (émission textuelle).
