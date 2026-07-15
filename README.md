@@ -85,6 +85,19 @@ Exemple de flux complet:
 Le compilateur conserve la chaîne:
 `FunC -> LLVM IR -> objet objet (.o/.obj) -> exécutable natif`.
 
+## 🌐 Compilation cross-compilée
+
+Syntaxe `--target` (LLVM triple):
+- `cargo run -- compile sample.fc --emit-obj --target x86_64-pc-windows-msvc`
+- `cargo run -- compile sample.fc --emit-exe --target x86_64-pc-windows-msvc --out-exe sample.exe`
+- `cargo run -- compile sample.fc --emit-obj --target aarch64-unknown-linux-gnu`
+
+Comportement:
+- Objet: `obj` si la cible contient `windows`, sinon `o`.
+- Exécutable: `exe` si la cible contient `windows`, sinon sans suffixe.
+- `emit_obj`/`emit_exe` réutilise `llc -mtriple` et `clang -target` (ou `cc` en fallback).
+- Si la chaîne LLVM/Clang ne supporte pas la cible, vous obtenez une erreur explicite.
+
 ## ✅ Exemples de validation
 
 - `sample_if_else.fc` : valide `if/else` avec retour d'un même type dans chaque branche.
