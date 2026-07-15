@@ -1,4 +1,8 @@
-use std::{env, fs, process};
+use std::{fs, process};
+
+use clap::{Args, Parser as ClapParser, Subcommand};
+use lexer::Lexer;
+use parser::Parser as FuncParser;
 
 mod ast;
 mod codegen;
@@ -7,51 +11,53 @@ mod parser;
 mod token;
 mod typecheck;
 
-use lexer::Lexer;
-use parser::Parser;
-
-#[derive(Default)]
+#[derive(Debug, ClapParser)]
+#[command(name = "funC", version, about = "Compilateur FunC")]
 struct Cli {
-    input: Option<String>,
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    Compile(CompileArgs),
+}
+
+#[derive(Debug, Args)]
+struct CompileArgs {
+    /// Fichier source FunC à compiler
+    input: String,
+
+    /// Affiche l'AST généré
+    #[arg(long)]
     emit_ast: bool,
+
+    /// Affiche les types inférés
+    #[arg(long)]
     emit_typed: bool,
+
+    /// Affiche l'IR LLVM textuelle dans la sortie standard
+    #[arg(long)]
     emit_ir: bool,
-    ir_path: Option<String>,
+
+    /// Écrit l'IR LLVM textuelle dans un fichier .ll
+    #[arg(short, long)]
+    out: Option<String>,
 }
 
 fn main() {
-    let mut cli = Cli::default();
-    let mut args = env::args().skip(1).peekable();
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--emit-ast" => cli.emit_ast = true,
-            "--emit-typed" => cli.emit_typed = true,
-            "--emit-ir" => cli.emit_ir = true,
-            "--out" => {
-                cli.ir_path = args.next();
-            }
-            _ if arg.starts_with('-') => {
-                eprintln!("option inconnue: {arg}");
-                print_usage();
-                process::exit(1);
-            }
-            _ => {
-                if cli.input.is_none() {
-                    cli.input = Some(arg);
-                }
-            }
-        }
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Compile(args) => run_compile(args),
     }
+}
 
-    let input = cli.input.unwrap_or_else(|| {
-        print_usage();
-        process::exit(1);
-    });
-
-    let source = match fs::read_to_string(&input) {
+fn run_compile(args: CompileArgs) {
+    let source = match fs::read_to_string(&args.input) {
         Ok(s) => s,
         Err(err) => {
-            eprintln!("Impossible de lire le fichier {input}: {err}");
+            eprintln!("Impossible de lire le fichier {}: {err}", args.input);
             process::exit(1);
         }
     };
@@ -64,7 +70,7 @@ fn main() {
         }
     };
 
-    let parsed = match Parser::new(lexed).parse_program() {
+    let parsed = match FuncParser::new(lexed).parse_program() {
         Ok(program) => program,
         Err(err) => {
             eprintln!("Erreur parser: {}:{}: {}", err.line, err.column, err.message);
@@ -72,8 +78,8 @@ fn main() {
         }
     };
 
-    if cli.emit_ast {
-        println!("=== AST ===\n{}", parsed);
+    if args.emit_ast {
+        println!("=== AST ===\n{parsed}");
     }
 
     let types = match typecheck::check(&parsed) {
@@ -84,16 +90,16 @@ fn main() {
         }
     };
 
-    if cli.emit_typed {
+    if args.emit_typed {
         println!("=== TYPES DÉDUITS ===");
         for (id, ty) in &types {
             println!("expr #{id}: {ty}");
         }
     }
 
-    if cli.emit_ir {
+    if args.emit_ir {
         let ir = codegen::generate(&parsed, &types);
-        if let Some(path) = cli.ir_path {
+        if let Some(path) = args.out {
             if let Err(err) = fs::write(&path, ir) {
                 eprintln!("Échec d'écriture IR {path}: {err}");
                 process::exit(1);
@@ -103,8 +109,4 @@ fn main() {
             println!("=== IR ===\n{ir}");
         }
     }
-}
-
-fn print_usage() {
-    eprintln!("Usage: funC [--emit-ast] [--emit-typed] [--emit-ir] [--out file.ll] <source.fc>");
 }
