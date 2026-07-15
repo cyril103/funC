@@ -431,3 +431,84 @@ impl Parser {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+
+    #[test]
+    fn parse_operator_precedence_with_and_without_parentheses() {
+        let source = "fn main() -> i64 { let a = 1 + 2 * 3; let b = (1 + 2) * 3; }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let first_let = &program.functions[0].body.expressions[0];
+        let second_let = &program.functions[0].body.expressions[1];
+
+        let (left_a, right_a) = match &first_let.kind {
+            ExprKind::Let {
+                name,
+                value,
+                ..
+            } => {
+                assert_eq!(name, "a");
+                match &value.kind {
+                    ExprKind::Binary(op, left, right) => (op, (left, right)),
+                    _ => panic!("expression inattendue pour let a"),
+                }
+            }
+            _ => panic!("première expression pas un let"),
+        };
+        assert_eq!(*left_a, BinaryOp::Add);
+        assert!(matches!(right_a.kind, ExprKind::Binary(BinaryOp::Mul, _, _)));
+
+        let (left_b, right_b, op_b) = match &second_let.kind {
+            ExprKind::Let {
+                name,
+                value,
+                ..
+            } => {
+                assert_eq!(name, "b");
+                match &value.kind {
+                    ExprKind::Binary(op, left, right) => (left, right, op),
+                    _ => panic!("expression inattendue pour let b"),
+                }
+            }
+            _ => panic!("deuxième expression pas un let"),
+        };
+        assert_eq!(*op_b, BinaryOp::Mul);
+        assert!(matches!(left_b.kind, ExprKind::Binary(BinaryOp::Add, _, _)));
+    }
+
+    #[test]
+    fn parse_nested_if_else_blocks() {
+        let source =
+            "fn main() -> i64 { if 1 < 2 { 1; } else { if 3 < 4 { 2; } else { 3; } } }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let top_if = &program.functions[0].body.expressions[0];
+        match &top_if.kind {
+            ExprKind::IfElse {
+                condition,
+                then_block,
+                else_block,
+            } => {
+                assert!(matches!(
+                    condition.kind,
+                    ExprKind::Binary(BinaryOp::Lt, _, _)
+                ));
+                assert!(matches!(
+                    then_block.expressions[0].kind,
+                    ExprKind::IntLiteral(1)
+                ));
+                assert!(matches!(
+                    else_block.expressions[0].kind,
+                    ExprKind::IfElse { .. }
+                ));
+            }
+            _ => panic!("expression racine pas un if-else"),
+        }
+    }
+}

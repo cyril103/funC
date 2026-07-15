@@ -18,9 +18,9 @@ L'objectif est de découper le code source brut (chaîne de caractères) en une 
   - [x] Option A : À la main (boucle de lecture caractère par caractère, idéal pour apprendre).
   - [ ] Option B : Avec une bibliothèque de combinateurs (ex: `nom` ou `logos` pour des performances maximales).
 - [ ] **Écrire des tests unitaires pour le Lexer**
-  - [ ] Valider la détection des flottants (`3.14`).
-  - [ ] Valider la distinction entre `=` (affectation) et `==` (comparaison).
-  - [ ] Valider la gestion des espaces et des commentaires.
+  - [x] Valider la détection des flottants (`3.14`).
+  - [x] Valider la distinction entre `=` (affectation) et `==` (comparaison).
+  - [x] Valider la gestion des espaces et des commentaires.
 
 ---
 
@@ -34,8 +34,8 @@ L'objectif est de transformer la suite de Tokens en un Arbre de Syntaxe Abstrait
   - [x] Implémenter la priorité des opérateurs (Precedence Climbing ou algorithme Shunting-Yard) pour que `1 + 2 * 3` soit bien analysé comme `1 + (2 * 3)`.
   - [x] Gérer l'associativité à gauche/droite (notamment pour les opérateurs logiques `&&` et `||`).
 - [ ] **Écrire des tests pour l'AST**
-  - [ ] Vérifier que les parenthèses forcent la priorité d'évaluation : `(1 + 2) * 3`.
-  - [ ] Valider la structure imbriquée des expressions `if-else`.
+  - [x] Vérifier que les parenthèses forcent la priorité d'évaluation : `(1 + 2) * 3`.
+  - [x] Valider la structure imbriquée des expressions `if-else`.
 
 ---
 

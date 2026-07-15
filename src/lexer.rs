@@ -317,6 +317,37 @@ impl Lexer {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{Lexer, TokenKind};
+
+    #[test]
+    fn lex_float_is_float_literal() {
+        let tokens = Lexer::new("3.14").tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::FloatLiteral(3.14));
+        assert_eq!(tokens[1].kind, TokenKind::Eof);
+    }
+
+    #[test]
+    fn lex_distinguishes_assign_and_equal() {
+        let tokens = Lexer::new("x = y == z").tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Identifier("x".to_string()));
+        assert_eq!(tokens[1].kind, TokenKind::Eq);
+        assert_eq!(tokens[2].kind, TokenKind::Identifier("y".to_string()));
+        assert_eq!(tokens[3].kind, TokenKind::EqEq);
+        assert_eq!(tokens[4].kind, TokenKind::Identifier("z".to_string()));
+    }
+
+    #[test]
+    fn lex_skips_whitespace_and_comments() {
+        let source = "  // commentaire ligne\n\t/* block */\nfn main() -> i64 { 0 }\n";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Fn);
+        assert_eq!(tokens[1].kind, TokenKind::Identifier("main".to_string()));
+        assert_eq!(tokens[tokens.len() - 2].kind, TokenKind::RBrace);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ParseError {
     pub message: String,
