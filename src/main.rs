@@ -59,6 +59,10 @@ struct CompileArgs {
     /// Écrit l'exécutable dans ce chemin (active --emit-exe)
     #[arg(long)]
     out_exe: Option<String>,
+
+    /// Spécifie la cible LLVM (ex: x86_64-pc-windows-msvc, aarch64-unknown-linux-gnu)
+    #[arg(long)]
+    target: Option<String>,
 }
 
 fn main() {
@@ -129,7 +133,7 @@ fn run_compile(args: CompileArgs) {
         }
 
         let object_path = if args.emit_obj || args.emit_exe {
-            Some(emit_object(&ir, &args))
+            Some(emit_object(&ir, &args, &args.target))
         } else {
             None
         };
@@ -142,14 +146,14 @@ fn run_compile(args: CompileArgs) {
 
         if args.emit_exe {
             match object_path {
-                Some(obj) => link_executable(&obj, &args),
+                Some(obj) => link_executable(&obj, &args, &args.target),
                 None => process::exit(1),
             }
         }
     }
 }
 
-fn emit_object(ir: &str, args: &CompileArgs) -> PathBuf {
+fn emit_object(ir: &str, args: &CompileArgs, target: &Option<String>) -> PathBuf {
     let object_path = args
         .out_obj
         .clone()
@@ -168,12 +172,15 @@ fn emit_object(ir: &str, args: &CompileArgs) -> PathBuf {
     };
 
     if ir_path.exists() {
-        let status = process::Command::new("llc")
-            .arg("-filetype=obj")
-            .arg("-o")
-            .arg(&object_path)
-            .arg(&ir_path)
-            .status();
+        let mut cmd = process::Command::new("llc");
+        cmd.arg("-filetype=obj");
+        cmd.arg("-o");
+        cmd.arg(&object_path);
+        if let Some(triple) = target {
+            cmd.arg(format!("-mtriple={triple}"));
+        }
+        cmd.arg(&ir_path);
+        let status = cmd.status();
 
         match status {
             Ok(exit) if exit.success() => {
@@ -196,7 +203,7 @@ fn emit_object(ir: &str, args: &CompileArgs) -> PathBuf {
     PathBuf::from(object_path)
 }
 
-fn link_executable(object_path: &PathBuf, args: &CompileArgs) {
+fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &Option<String>) {
     let exe_path = args
         .out_exe
         .clone()
@@ -211,11 +218,17 @@ fn link_executable(object_path: &PathBuf, args: &CompileArgs) {
 
     let linkers = ["clang", "cc"];
     for linker in &linkers {
-        let status = process::Command::new(linker)
-            .arg(object_path.as_os_str())
-            .arg("-o")
-            .arg(&exe_path)
-            .status();
+        let mut cmd = process::Command::new(linker);
+        cmd.arg(object_path.as_os_str());
+        if *linker == "clang" {
+            if let Some(triple) = target {
+                cmd.arg(format!("-target"));
+                cmd.arg(triple);
+            }
+        }
+        cmd.arg("-o");
+        cmd.arg(&exe_path);
+        let status = cmd.status();
 
         match status {
             Ok(exit) if exit.success() => {
