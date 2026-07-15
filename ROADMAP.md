@@ -33,7 +33,7 @@ L'objectif est de transformer la suite de Tokens en un Arbre de Syntaxe Abstrait
   - [x] Parser de descente récursive pour les structures globales (`fn`, paramètres, blocs `{}`).
   - [x] Implémenter la priorité des opérateurs (Precedence Climbing ou algorithme Shunting-Yard) pour que `1 + 2 * 3` soit bien analysé comme `1 + (2 * 3)`.
   - [x] Gérer l'associativité à gauche/droite (notamment pour les opérateurs logiques `&&` et `||`).
-- [ ] **Écrire des tests pour l'AST**
+- [x] **Écrire des tests pour l'AST**
   - [x] Vérifier que les parenthèses forcent la priorité d'évaluation : `(1 + 2) * 3`.
   - [x] Valider la structure imbriquée des expressions `if-else`.
 

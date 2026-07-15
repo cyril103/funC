@@ -511,4 +511,27 @@ mod tests {
             _ => panic!("expression racine pas un if-else"),
         }
     }
+
+    #[test]
+    fn parse_logical_precedence_and_left_associativity() {
+        let source = "fn main() -> bool { true && false && true || false; }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let expr = &program.functions[0].body.expressions[0];
+        let top = match &expr.kind {
+            ExprKind::Binary(op, left, right) => (op, left, right),
+            _ => panic!("l'expression racine doit être binaire"),
+        };
+        assert_eq!(*top.0, BinaryOp::Or);
+        assert!(matches!(top.1.kind, ExprKind::Binary(BinaryOp::And, _, _)));
+        assert!(matches!(top.2.kind, ExprKind::BoolLiteral(_)));
+
+        if let ExprKind::Binary(BinaryOp::And, and_left, and_right) = &top.1.kind {
+            assert!(matches!(and_left.kind, ExprKind::Binary(BinaryOp::And, _, _)));
+            assert!(matches!(and_right.kind, ExprKind::BoolLiteral(false)));
+        } else {
+            panic!("attendu and gauche imbriqué");
+        }
+    }
 }
