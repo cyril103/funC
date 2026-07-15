@@ -4,87 +4,100 @@ use crate::ast::{Block, BinaryOp, Expr, ExprKind, Function, Program, Type};
 use inkwell::AddressSpace;
 use inkwell::FloatPredicate;
 use inkwell::IntPredicate;
-use inkwell::builder::Builder;
+use inkwell::builder::{Builder, BuilderError};
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::targets::{InitializationConfig, Target, TargetMachine};
-use inkwell::types::BasicTypeEnum;
+use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum};
 
-type ValueWithType<'ctx> = (Option<BasicValueEnum<'ctx>>, Type);
+type ValueWithType = (Option<BasicValueEnum<'static>>, Type);
 
 pub struct Generator {
     types: HashMap<usize, Type>,
     current_scope: Vec<HashMap<String, BasicValueEnum<'static>>>,
-    context: &'static Context,
-    module: Module<'static>,
-    builder: Builder<'static>,
+    context: *const Context,
+    module: *const Module<'static>,
+    builder: *const Builder<'static>,
     next_label: usize,
 }
 
 impl Generator {
-    pub fn new(types: &HashMap<usize, Type>) -> Self {
+    pub fn new(types: &HashMap<usize, Type>) -> Generator {
         let context = Box::new(Context::create());
         let context: &'static Context = Box::leak(context);
-        let module = context.create_module("funC-module");
-        let builder = context.create_builder();
+        let module = Box::new(context.create_module("funC-module"));
+        let module: &'static Module<'static> = Box::leak(module);
+        let builder = Box::new(context.create_builder());
+        let builder: &'static Builder<'static> = Box::leak(builder);
 
         Self {
             types: types.clone(),
             current_scope: vec![HashMap::new()],
-            context,
-            module,
-            builder,
+            context: context as *const _,
+            module: module as *const _,
+            builder: builder as *const _,
             next_label: 0,
         }
     }
 
     pub fn generate(mut self, program: &Program) -> String {
         let triple = init_target_machine();
-        self.module.set_triple(&triple);
-        self.declare_runtime();
+        self.module_ref().set_triple(&triple);
+        declare_runtime(self.context, self.module);
 
         for function in &program.functions {
             self.emit_function(function);
         }
 
-        self.module.print_to_string().to_string()
+        self.module_ref().print_to_string().to_string()
     }
 
-    fn declare_runtime(&self) {
-        let malloc_type = self
-            .i8_ptr_type()
-            .fn_type(&[self.context.i64_type().into()], false);
-        self.module
-            .add_function("malloc", malloc_type, None);
-
-        let free_type = self
-            .context
-            .void_type()
-            .fn_type(&[self.i8_ptr_type().into()], false);
-        self.module
-            .add_function("free", free_type, None);
+    #[inline]
+    fn context_ref(&self) -> &'static Context {
+        unsafe { std::mem::transmute::<*const Context, &'static Context>(self.context) }
     }
 
-    fn i8_ptr_type(&self) -> inkwell::types::PointerType {
-        self.context.i8_type().ptr_type(AddressSpace::default())
+    #[inline]
+    fn module_ref(&self) -> &'static Module<'static> {
+        unsafe { std::mem::transmute::<*const Module<'static>, &'static Module<'static>>(self.module) }
+    }
+
+    #[inline]
+    fn builder_ref(&self) -> &'static Builder<'static> {
+        unsafe { std::mem::transmute::<*const Builder<'static>, &'static Builder<'static>>(self.builder) }
+    }
+
+    fn expect<T>(&self, value: Result<T, BuilderError>, operation: &str) -> T {
+        value.expect(operation)
+    }
+
+    fn i8_ptr_type(&self) -> inkwell::types::PointerType<'static> {
+        unsafe { std::mem::transmute(self.context_ref().ptr_type(AddressSpace::default())) }
     }
 
     fn llvm_type(&self, ty: &Type) -> Option<BasicTypeEnum<'static>> {
-        Some(match ty {
+        let context = self.context_ref();
+        let value = match ty {
             Type::Void => return None,
-            Type::Bool => self.context.bool_type().as_basic_type_enum(),
-            Type::I8 => self.context.i8_type().as_basic_type_enum(),
-            Type::I16 => self.context.i16_type().as_basic_type_enum(),
-            Type::I32 => self.context.i32_type().as_basic_type_enum(),
-            Type::I64 => self.context.i64_type().as_basic_type_enum(),
-            Type::U8 => self.context.i8_type().as_basic_type_enum(),
-            Type::U16 => self.context.i16_type().as_basic_type_enum(),
-            Type::U32 => self.context.i32_type().as_basic_type_enum(),
-            Type::U64 => self.context.i64_type().as_basic_type_enum(),
-            Type::F32 => self.context.f32_type().as_basic_type_enum(),
-            Type::F64 => self.context.f64_type().as_basic_type_enum(),
+            Type::Bool => context.bool_type().as_basic_type_enum(),
+            Type::I8 => context.i8_type().as_basic_type_enum(),
+            Type::I16 => context.i16_type().as_basic_type_enum(),
+            Type::I32 => context.i32_type().as_basic_type_enum(),
+            Type::I64 => context.i64_type().as_basic_type_enum(),
+            Type::U8 => context.i8_type().as_basic_type_enum(),
+            Type::U16 => context.i16_type().as_basic_type_enum(),
+            Type::U32 => context.i32_type().as_basic_type_enum(),
+            Type::U64 => context.i64_type().as_basic_type_enum(),
+            Type::F32 => context.f32_type().as_basic_type_enum(),
+            Type::F64 => context.f64_type().as_basic_type_enum(),
             Type::Pointer(_) => self.i8_ptr_type().as_basic_type_enum(),
+        };
+        Some(unsafe {
+            std::mem::transmute::<
+                BasicTypeEnum<'_>,
+                BasicTypeEnum<'static>,
+            >(value)
         })
     }
 
@@ -101,7 +114,7 @@ impl Generator {
             .map(|p| self.llvm_type(&p.ty).expect("invalid parameter type"))
             .collect::<Vec<_>>();
         let fn_type = if function.return_type == Type::Void {
-            self.context
+            self.context_ref()
                 .void_type()
                 .fn_type(&fn_params.iter().map(|t| (*t).into()).collect::<Vec<_>>(), false)
         } else {
@@ -113,9 +126,9 @@ impl Generator {
                 )
         };
 
-        let compiled = self.module.add_function(&function.name, fn_type, None);
-        let entry = self.context.append_basic_block(compiled, "entry");
-        self.builder.position_at_end(entry);
+        let compiled = self.module_ref().add_function(&function.name, fn_type, None);
+        let entry = self.context_ref().append_basic_block(compiled, "entry");
+        self.builder_ref().position_at_end(entry);
 
         self.current_scope.push(HashMap::new());
         for (index, param) in function.params.iter().enumerate() {
@@ -130,14 +143,14 @@ impl Generator {
 
         let (ret_value, _ret_type) = self.emit_block(&function.body);
         if function.return_type == Type::Void {
-            self.builder.build_return(None).unwrap();
+            let _ = self.builder_ref().build_return(None);
         } else if let Some(value) = ret_value {
-            self.builder.build_return(Some(&value)).unwrap();
+            let _ = self.builder_ref().build_return(Some(&value));
         } else {
             let fallback = self
                 .numeric_zero_value(&function.return_type)
                 .expect("cannot build fallback zero");
-            self.builder.build_return(Some(&fallback)).unwrap();
+            let _ = self.builder_ref().build_return(Some(&fallback));
         }
         self.current_scope.pop();
     }
@@ -157,7 +170,7 @@ impl Generator {
         (value, ty)
     }
 
-    fn emit_expr(&mut self, expr: &Expr) -> ValueWithType<'static> {
+    fn emit_expr(&mut self, expr: &Expr) -> ValueWithType {
         let ty = self.types.get(&expr.id).cloned().unwrap_or(Type::Void);
         match &expr.kind {
             ExprKind::Let { name, value, .. } => {
@@ -174,9 +187,8 @@ impl Generator {
                 let rhs = self.emit_expr(value);
                 let ptr = self.emit_expr(ptr);
                 let ptr = ptr.0.expect("store on non-value pointer").into_pointer_value();
-                self.builder
-                    .build_store(ptr, rhs.0.expect("store without RHS"))
-                    .unwrap();
+                let _ = self.builder_ref()
+                    .build_store(ptr, rhs.0.expect("store without RHS"));
                 (None, Type::Void)
             }
             ExprKind::IfElse {
@@ -201,19 +213,19 @@ impl Generator {
                 (Some(value), ty)
             }
             ExprKind::IntLiteral(value) => {
-                (Some(self.context.i64_type().const_int(*value as u64, true).as_basic_value_enum()), Type::I64)
+                (Some(self.context_ref().i64_type().const_int(*value as u64, true).as_basic_value_enum()), Type::I64)
             }
             ExprKind::FloatLiteral(value) => (
-                Some(self.context.f64_type().const_float(*value).as_basic_value_enum()),
+                Some(self.context_ref().f64_type().const_float(*value).as_basic_value_enum()),
                 Type::F64,
             ),
             ExprKind::BoolLiteral(value) => (
-                Some(self.context.bool_type().const_int(*value as u64, false).as_basic_value_enum()),
+                Some(self.context_ref().bool_type().const_int(*value as u64, false).as_basic_value_enum()),
                 Type::Bool,
             ),
             ExprKind::Call { name, args } => {
                 let function = self
-                    .module
+                    .module_ref()
                     .get_function(name)
                     .unwrap_or_else(|| panic!("function '{}' non déclarée", name));
 
@@ -224,30 +236,34 @@ impl Generator {
                         BasicMetadataValueEnum::from(value)
                     })
                     .collect::<Vec<_>>();
-                let call = self
-                    .builder
-                    .build_call(function, &args, "call")
-                    .unwrap();
+                let call = self.expect(
+                    self.builder_ref().build_call(function, &args, "call"),
+                    "call",
+                );
                 if ty == Type::Void {
                     (None, Type::Void)
                 } else {
-                    (Some(call.try_as_basic_value().unwrap_basic()), ty)
+                    (Some(
+                        call.try_as_basic_value()
+                            .expect_basic("call should return a value"),
+                    ), ty)
                 }
             }
             ExprKind::Alloc(size) => {
                 let (size, _) = self.emit_expr(size);
                 let malloc = self
-                    .module
+                    .module_ref()
                     .get_function("malloc")
                     .expect("malloc manquant");
                 let size = size.expect("sizeof alloc invalide");
                 let ptr = self
-                    .builder
-                    .build_call(malloc, &[size.into()], "malloc_call")
-                    .unwrap()
+                    .expect(
+                        self.builder_ref()
+                            .build_call(malloc, &[size.into()], "malloc_call"),
+                        "malloc",
+                    )
                     .try_as_basic_value()
-                    .left()
-                    .expect("malloc returned no value");
+                    .expect_basic("malloc returned no value");
                 (Some(ptr), Type::Pointer(Box::new(Type::I8)))
             }
             ExprKind::Free(ptr) => {
@@ -255,19 +271,22 @@ impl Generator {
                 let ptr = ptr.0.expect("free needs pointer");
                 let ptr = ptr.into_pointer_value();
                 let free_fn = self
-                    .module
+                    .module_ref()
                     .get_function("free")
                     .expect("free manquant");
                 let ptr = if ptr.get_type() == self.i8_ptr_type() {
                     ptr
                 } else {
-                    self.builder
-                        .build_pointer_cast(ptr, self.i8_ptr_type(), "free_cast")
-                        .unwrap()
+                    self.expect(
+                        self.builder_ref()
+                            .build_pointer_cast(ptr, self.i8_ptr_type(), "free_cast"),
+                        "free_cast",
+                    )
                 };
-                self.builder
-                    .build_call(free_fn, &[ptr.into()], "free_call")
-                    .unwrap();
+                self.expect(
+                    self.builder_ref().build_call(free_fn, &[ptr.into()], "free_call"),
+                    "free",
+                );
                 (None, Type::Void)
             }
             ExprKind::Load(ptr) => {
@@ -278,15 +297,15 @@ impl Generator {
                     _ => Type::Void,
                 };
                 let pointee_type = self.llvm_type(&pointee).expect("invalid pointee type");
-                let loaded = self
-                    .builder
-                    .build_load(pointee_type, ptr, "load")
-                    .unwrap();
+                let loaded = self.expect(
+                    self.builder_ref().build_load(pointee_type, ptr, "load"),
+                    "load",
+                );
                 (Some(loaded), pointee)
             }
             ExprKind::SizeOf(ty) => (
                 Some(
-                    self.context
+                    self.context_ref()
                         .i64_type()
                         .const_int(self.size_of_type(ty) as u64, false)
                         .as_basic_value_enum(),
@@ -303,7 +322,7 @@ impl Generator {
         left: &Box<Expr>,
         right: &Box<Expr>,
         ty: &Type,
-    ) -> ValueWithType<'static> {
+    ) -> ValueWithType {
         let lhs = self.emit_expr(left).0.expect("binary lhs without value");
         let rhs = self.emit_expr(right).0.expect("binary rhs without value");
 
@@ -312,59 +331,61 @@ impl Generator {
             let rhs = rhs.into_float_value();
             let value = match op {
                 BinaryOp::Eq => self
-                    .builder
-                    .build_float_compare(FloatPredicate::OEQ, lhs, rhs, "fcmp_eq")
-                    .unwrap()
+                    .expect(
+                        self.builder_ref()
+                            .build_float_compare(FloatPredicate::OEQ, lhs, rhs, "fcmp_eq"),
+                        "fcmp_eq",
+                    )
                     .as_basic_value_enum(),
                 BinaryOp::NotEq => self
-                    .builder
-                    .build_float_compare(FloatPredicate::ONE, lhs, rhs, "fcmp_ne")
-                    .unwrap()
+                    .expect(
+                        self.builder_ref()
+                            .build_float_compare(FloatPredicate::ONE, lhs, rhs, "fcmp_ne"),
+                        "fcmp_ne",
+                    )
                     .as_basic_value_enum(),
                 BinaryOp::Lt => self
-                    .builder
-                    .build_float_compare(FloatPredicate::OLT, lhs, rhs, "fcmp_lt")
-                    .unwrap()
+                    .expect(
+                        self.builder_ref()
+                            .build_float_compare(FloatPredicate::OLT, lhs, rhs, "fcmp_lt"),
+                        "fcmp_lt",
+                    )
                     .as_basic_value_enum(),
                 BinaryOp::LtEq => self
-                    .builder
-                    .build_float_compare(FloatPredicate::OLE, lhs, rhs, "fcmp_lte")
-                    .unwrap()
+                    .expect(
+                        self.builder_ref()
+                            .build_float_compare(FloatPredicate::OLE, lhs, rhs, "fcmp_lte"),
+                        "fcmp_lte",
+                    )
                     .as_basic_value_enum(),
                 BinaryOp::Gt => self
-                    .builder
-                    .build_float_compare(FloatPredicate::OGT, lhs, rhs, "fcmp_gt")
-                    .unwrap()
+                    .expect(
+                        self.builder_ref()
+                            .build_float_compare(FloatPredicate::OGT, lhs, rhs, "fcmp_gt"),
+                        "fcmp_gt",
+                    )
                     .as_basic_value_enum(),
                 BinaryOp::GtEq => self
-                    .builder
-                    .build_float_compare(FloatPredicate::OGE, lhs, rhs, "fcmp_gte")
-                    .unwrap()
+                    .expect(
+                        self.builder_ref()
+                            .build_float_compare(FloatPredicate::OGE, lhs, rhs, "fcmp_gte"),
+                        "fcmp_gte",
+                    )
                     .as_basic_value_enum(),
                 BinaryOp::Add => self
-                    .builder
-                    .build_float_add(lhs, rhs, "fadd")
-                    .unwrap()
+                    .expect(self.builder_ref().build_float_add(lhs, rhs, "fadd"), "fadd")
                     .as_basic_value_enum(),
                 BinaryOp::Sub => self
-                    .builder
-                    .build_float_sub(lhs, rhs, "fsub")
-                    .unwrap()
+                    .expect(self.builder_ref().build_float_sub(lhs, rhs, "fsub"), "fsub")
                     .as_basic_value_enum(),
                 BinaryOp::Mul => self
-                    .builder
-                    .build_float_mul(lhs, rhs, "fmul")
-                    .unwrap()
+                    .expect(self.builder_ref().build_float_mul(lhs, rhs, "fmul"), "fmul")
                     .as_basic_value_enum(),
                 BinaryOp::Div => self
-                    .builder
-                    .build_float_div(lhs, rhs, "fdiv")
-                    .unwrap()
+                    .expect(self.builder_ref().build_float_div(lhs, rhs, "fdiv"), "fdiv")
                     .as_basic_value_enum(),
                 BinaryOp::Mod => self
-                    .builder
-                    .build_float_rem(lhs, rhs, "frem")
-                    .unwrap()
+                    .expect(self.builder_ref().build_float_rem(lhs, rhs, "frem"), "frem")
                     .as_basic_value_enum(),
                 _ => unreachable!(),
             };
@@ -377,7 +398,7 @@ impl Generator {
                 ) {
                     Type::Bool
                 } else {
-                    *ty
+                    ty.clone()
                 },
             );
         }
@@ -386,13 +407,17 @@ impl Generator {
             let lhs = lhs.into_pointer_value();
             let rhs = rhs.into_pointer_value();
             let lhs = self
-                .builder
-                .build_ptr_to_int(lhs, self.context.i64_type(), "cmp_lhs")
-                .unwrap();
+                .expect(
+                    self.builder_ref()
+                        .build_ptr_to_int(lhs, self.context_ref().i64_type(), "cmp_lhs"),
+                    "ptr_to_int lhs",
+                );
             let rhs = self
-                .builder
-                .build_ptr_to_int(rhs, self.context.i64_type(), "cmp_rhs")
-                .unwrap();
+                .expect(
+                    self.builder_ref()
+                        .build_ptr_to_int(rhs, self.context_ref().i64_type(), "cmp_rhs"),
+                    "ptr_to_int rhs",
+                );
             let predicate = match op {
                 BinaryOp::Eq => IntPredicate::EQ,
                 BinaryOp::NotEq => IntPredicate::NE,
@@ -402,12 +427,13 @@ impl Generator {
                 BinaryOp::GtEq => IntPredicate::UGE,
                 _ => unreachable!(),
             };
-            (
-                Some(
-                    self.builder
-                        .build_int_compare(predicate, lhs, rhs, "icmp_ptr")
-                        .unwrap()
-                        .as_basic_value_enum(),
+                (
+                    Some(
+                        self.expect(
+                            self.builder_ref().build_int_compare(predicate, lhs, rhs, "icmp_ptr"),
+                            "icmp_ptr",
+                        )
+                            .as_basic_value_enum(),
                 ),
                 Type::Bool,
             )
@@ -451,9 +477,10 @@ impl Generator {
                 };
                 return (
                     Some(
-                        self.builder
-                            .build_int_compare(predicate, lhs, rhs, "icmp")
-                            .unwrap()
+                        self.expect(
+                            self.builder_ref().build_int_compare(predicate, lhs, rhs, "icmp"),
+                            "icmp",
+                        )
                             .as_basic_value_enum(),
                     ),
                     Type::Bool,
@@ -462,43 +489,41 @@ impl Generator {
 
             let value = match op {
                 BinaryOp::Add => self
-                    .builder
-                    .build_int_add(lhs, rhs, "add")
-                    .unwrap()
+                    .expect(self.builder_ref().build_int_add(lhs, rhs, "add"), "add")
                     .as_basic_value_enum(),
                 BinaryOp::Sub => self
-                    .builder
-                    .build_int_sub(lhs, rhs, "sub")
-                    .unwrap()
+                    .expect(self.builder_ref().build_int_sub(lhs, rhs, "sub"), "sub")
                     .as_basic_value_enum(),
                 BinaryOp::Mul => self
-                    .builder
-                    .build_int_mul(lhs, rhs, "mul")
-                    .unwrap()
+                    .expect(self.builder_ref().build_int_mul(lhs, rhs, "mul"), "mul")
                     .as_basic_value_enum(),
                 BinaryOp::Div => {
                     if ty.is_signed_integer() {
-                        self.builder
-                            .build_int_signed_div(lhs, rhs, "sdiv")
-                            .unwrap()
+                        self.expect(
+                            self.builder_ref().build_int_signed_div(lhs, rhs, "sdiv"),
+                            "sdiv",
+                        )
                             .as_basic_value_enum()
                     } else {
-                        self.builder
-                            .build_int_unsigned_div(lhs, rhs, "udiv")
-                            .unwrap()
+                        self.expect(
+                            self.builder_ref().build_int_unsigned_div(lhs, rhs, "udiv"),
+                            "udiv",
+                        )
                             .as_basic_value_enum()
                     }
                 }
                 BinaryOp::Mod => {
                     if ty.is_signed_integer() {
-                        self.builder
-                            .build_int_signed_rem(lhs, rhs, "srem")
-                            .unwrap()
+                        self.expect(
+                            self.builder_ref().build_int_signed_rem(lhs, rhs, "srem"),
+                            "srem",
+                        )
                             .as_basic_value_enum()
                     } else {
-                        self.builder
-                            .build_int_unsigned_rem(lhs, rhs, "urem")
-                            .unwrap()
+                        self.expect(
+                            self.builder_ref().build_int_unsigned_rem(lhs, rhs, "urem"),
+                            "urem",
+                        )
                             .as_basic_value_enum()
                     }
                 }
@@ -506,7 +531,7 @@ impl Generator {
                     unreachable!()
                 }
             };
-            (Some(value), *ty)
+            (Some(value), ty.clone())
         }
     }
 
@@ -515,40 +540,37 @@ impl Generator {
         condition: &Expr,
         then_block: &Block,
         else_block: &Block,
-    ) -> ValueWithType<'static> {
+    ) -> ValueWithType {
         let condition = self.emit_expr(condition);
         let cond_value = condition.0.expect("if condition without value");
 
         let current = self
-            .builder
+            .builder_ref()
             .get_insert_block()
             .expect("builder position required");
         let parent = current.get_parent().expect("basic block without parent");
 
-        let then_bb = self.context.append_basic_block(parent, &self.next_label("then"));
-        let else_bb = self.context.append_basic_block(parent, &self.next_label("else"));
-        let merge_bb = self.context.append_basic_block(parent, &self.next_label("merge"));
-        self.builder
-            .build_conditional_branch(cond_value.into_int_value(), then_bb, else_bb)
-            .unwrap();
+        let then_bb = self.context_ref().append_basic_block(parent, &self.next_label("then"));
+        let else_bb = self.context_ref().append_basic_block(parent, &self.next_label("else"));
+        let merge_bb = self.context_ref().append_basic_block(parent, &self.next_label("merge"));
+        let _ = self
+            .builder_ref()
+            .build_conditional_branch(cond_value.into_int_value(), then_bb, else_bb);
 
-        self.builder.position_at_end(then_bb);
+        self.builder_ref().position_at_end(then_bb);
         let (then_value, then_type) = self.emit_block(then_block);
-        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let _ = self.builder_ref().build_unconditional_branch(merge_bb);
 
-        self.builder.position_at_end(else_bb);
+        self.builder_ref().position_at_end(else_bb);
         let (else_value, else_type) = self.emit_block(else_block);
-        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let _ = self.builder_ref().build_unconditional_branch(merge_bb);
 
-        self.builder.position_at_end(merge_bb);
-        if then_type != Type::Void && then_type == else_type {
-            let phi_type = self
-                .llvm_type(&then_type)
-                .expect("if value requires phi type");
-            let phi = self
-                .builder
-                .build_phi(phi_type, "if_phi")
-                .unwrap();
+        self.builder_ref().position_at_end(merge_bb);
+            if then_type != Type::Void && then_type == else_type {
+                let phi_type = self
+                    .llvm_type(&then_type)
+                    .expect("if value requires phi type");
+            let phi = self.expect(self.builder_ref().build_phi(phi_type, "if_phi"), "if_phi");
             let then_value =
                 then_value.expect("then block should return a value");
             let else_value =
@@ -565,51 +587,50 @@ impl Generator {
         op: &BinaryOp,
         left: &Expr,
         right: &Expr,
-    ) -> ValueWithType<'static> {
+    ) -> ValueWithType {
         let left = self.emit_expr(left);
         let left_val = left.0.expect("logical lhs without value").into_int_value();
         let current = self
-            .builder
+            .builder_ref()
             .get_insert_block()
             .expect("builder position required");
         let parent = current.get_parent().expect("basic block without parent");
 
-        let rhs_bb = self.context.append_basic_block(parent, &self.next_label("logic_rhs"));
-        let short_bb = self.context.append_basic_block(parent, &self.next_label("logic_short"));
-        let merge_bb = self.context.append_basic_block(parent, &self.next_label("logic_merge"));
+        let rhs_bb = self.context_ref().append_basic_block(parent, &self.next_label("logic_rhs"));
+        let short_bb = self.context_ref().append_basic_block(parent, &self.next_label("logic_short"));
+        let merge_bb = self.context_ref().append_basic_block(parent, &self.next_label("logic_merge"));
 
         match op {
             BinaryOp::Or => {
-                self.builder
-                    .build_conditional_branch(left_val, short_bb, rhs_bb)
-                    .unwrap();
+                let _ = self.builder_ref()
+                    .build_conditional_branch(left_val, short_bb, rhs_bb);
             }
             BinaryOp::And => {
-                self.builder
-                    .build_conditional_branch(left_val, rhs_bb, short_bb)
-                    .unwrap();
+                let _ = self.builder_ref()
+                    .build_conditional_branch(left_val, rhs_bb, short_bb);
             }
             _ => unreachable!(),
         }
 
-        self.builder.position_at_end(rhs_bb);
+        self.builder_ref().position_at_end(rhs_bb);
         let rhs = self.emit_expr(right);
         let rhs_value = rhs.0.expect("rhs of logical missing value");
-        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let _ = self.builder_ref().build_unconditional_branch(merge_bb);
 
-        self.builder.position_at_end(short_bb);
+        self.builder_ref().position_at_end(short_bb);
         let short_value = match op {
-            BinaryOp::Or => self.context.bool_type().const_int(1, false).as_basic_value_enum(),
-            BinaryOp::And => self.context.bool_type().const_int(0, false).as_basic_value_enum(),
+            BinaryOp::Or => self.context_ref().bool_type().const_int(1, false).as_basic_value_enum(),
+            BinaryOp::And => self.context_ref().bool_type().const_int(0, false).as_basic_value_enum(),
             _ => unreachable!(),
         };
-        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let _ = self.builder_ref().build_unconditional_branch(merge_bb);
 
-        self.builder.position_at_end(merge_bb);
+        self.builder_ref().position_at_end(merge_bb);
         let phi = self
-            .builder
-            .build_phi(self.context.bool_type().as_basic_type_enum(), "logical_phi")
-            .unwrap();
+            .builder_ref()
+            .build_phi(self.context_ref().bool_type().as_basic_type_enum(), "logical_phi")
+            ;
+        let phi = self.expect(phi, "logical_phi");
         phi.add_incoming(&[(&short_value, short_bb), (&rhs_value, rhs_bb)]);
         (Some(phi.as_basic_value()), Type::Bool)
     }
@@ -627,21 +648,26 @@ impl Generator {
     }
 
     fn numeric_zero_value(&self, ty: &Type) -> Option<BasicValueEnum<'static>> {
-        match ty {
-            Type::Bool => Some(self.context.bool_type().const_zero().as_basic_value_enum()),
-            Type::I8 => Some(self.context.i8_type().const_zero().as_basic_value_enum()),
-            Type::I16 => Some(self.context.i16_type().const_zero().as_basic_value_enum()),
-            Type::I32 => Some(self.context.i32_type().const_zero().as_basic_value_enum()),
-            Type::I64 => Some(self.context.i64_type().const_zero().as_basic_value_enum()),
-            Type::U8 => Some(self.context.i8_type().const_zero().as_basic_value_enum()),
-            Type::U16 => Some(self.context.i16_type().const_zero().as_basic_value_enum()),
-            Type::U32 => Some(self.context.i32_type().const_zero().as_basic_value_enum()),
-            Type::U64 => Some(self.context.i64_type().const_zero().as_basic_value_enum()),
-            Type::F32 => Some(self.context.f32_type().const_zero().as_basic_value_enum()),
-            Type::F64 => Some(self.context.f64_type().const_zero().as_basic_value_enum()),
+        let context = self.context_ref();
+        let value = match ty {
+            Type::Bool => Some(context.bool_type().const_zero().as_basic_value_enum()),
+            Type::I8 => Some(context.i8_type().const_zero().as_basic_value_enum()),
+            Type::I16 => Some(context.i16_type().const_zero().as_basic_value_enum()),
+            Type::I32 => Some(context.i32_type().const_zero().as_basic_value_enum()),
+            Type::I64 => Some(context.i64_type().const_zero().as_basic_value_enum()),
+            Type::U8 => Some(context.i8_type().const_zero().as_basic_value_enum()),
+            Type::U16 => Some(context.i16_type().const_zero().as_basic_value_enum()),
+            Type::U32 => Some(context.i32_type().const_zero().as_basic_value_enum()),
+            Type::U64 => Some(context.i64_type().const_zero().as_basic_value_enum()),
+            Type::F32 => Some(context.f32_type().const_zero().as_basic_value_enum()),
+            Type::F64 => Some(context.f64_type().const_zero().as_basic_value_enum()),
             Type::Pointer(_) => Some(self.i8_ptr_type().const_zero().as_basic_value_enum()),
             Type::Void => None,
-        }
+        };
+        value
+            .map(|value| unsafe {
+                std::mem::transmute::<BasicValueEnum<'_>, BasicValueEnum<'static>>(value)
+            })
     }
 }
 
@@ -649,8 +675,22 @@ pub fn generate(program: &Program, types: &HashMap<usize, Type>) -> String {
     Generator::new(types).generate(program)
 }
 
-pub fn init_target_machine() -> String {
+fn declare_runtime(context: *const Context, module: *const Module<'static>) {
+    let context = unsafe { &*context };
+    let module = unsafe { &*module };
+    let malloc_type = context
+        .ptr_type(AddressSpace::default())
+        .fn_type(&[context.i64_type().into()], false);
+    let _ = module.add_function("malloc", malloc_type, None);
+
+    let free_type = context
+        .void_type()
+        .fn_type(&[context.ptr_type(AddressSpace::default()).into()], false);
+    let _ = module.add_function("free", free_type, None);
+}
+
+pub fn init_target_machine() -> inkwell::targets::TargetTriple {
     Target::initialize_all(&InitializationConfig::default());
     let triple = TargetMachine::get_default_triple();
-    triple.as_str().to_string()
+    triple
 }

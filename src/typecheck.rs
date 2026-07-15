@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{BinaryOp, Block, Expr, ExprKind, Function, Program, Type};
+use crate::ast::{BinaryOp, Block, Expr, ExprKind, Program, Type};
 
 #[derive(Debug, Clone)]
 pub struct FunctionSignature {
@@ -250,7 +250,7 @@ fn infer_expr(
             let size_ty = infer_expr(size, env, functions, inferred)?;
             if size_ty != Type::I64 && size_ty != Type::I32 {
                 return Err(TypeError {
-                    message: "alloc attend un entier de taille",
+                    message: "alloc attend un entier de taille".to_string(),
                     line: 0,
                     column: 0,
                 });
@@ -283,7 +283,7 @@ fn infer_expr(
             }
         }
         ExprKind::SizeOf(ty) => {
-            let bytes = match ty {
+            let _bytes = match ty {
                 Type::Void => 0,
                 Type::Bool => 1,
                 Type::I8 | Type::U8 => 1,

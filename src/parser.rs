@@ -21,7 +21,7 @@ impl Parser {
 
     pub fn parse_program(mut self) -> Result<Program, ParseError> {
         let mut functions = Vec::new();
-        while !self.check(&TokenKind::Eof) {
+        while !self.check(TokenKind::Eof) {
             functions.push(self.parse_function()?);
         }
         Ok(Program { functions })
@@ -461,7 +461,7 @@ mod tests {
             _ => panic!("première expression pas un let"),
         };
         assert_eq!(*left_a, BinaryOp::Add);
-        assert!(matches!(right_a.kind, ExprKind::Binary(BinaryOp::Mul, _, _)));
+        assert!(matches!(right_a.0.kind, ExprKind::Binary(BinaryOp::Mul, _, _)));
 
         let (left_b, right_b, op_b) = match &second_let.kind {
             ExprKind::Let {

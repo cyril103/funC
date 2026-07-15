@@ -6,7 +6,6 @@ pub struct Lexer {
     idx: usize,
     line: usize,
     column: usize,
-    next_id: usize,
 }
 
 impl Lexer {
@@ -16,17 +15,17 @@ impl Lexer {
             idx: 0,
             line: 1,
             column: 1,
-            next_id: 0,
         }
     }
 
     pub fn tokenize(mut self) -> Result<Vec<Token>, LexError> {
         let mut tokens = Vec::new();
-        while let Some(ch) = self.peek() {
+        while self.peek().is_some() {
             self.skip_ws_and_comments();
             if self.idx >= self.chars.len() {
                 break;
             }
+            let ch = self.peek().unwrap();
             let line = self.line;
             let column = self.column;
             let tok = match ch {

@@ -112,24 +112,6 @@ impl Type {
     pub fn is_numeric(&self) -> bool {
         self.is_integer() || self.is_float()
     }
-
-    pub fn llvm_name(&self) -> String {
-        match self {
-            Type::Void => "void".to_string(),
-            Type::Bool => "i1".to_string(),
-            Type::I8 => "i8".to_string(),
-            Type::I16 => "i16".to_string(),
-            Type::I32 => "i32".to_string(),
-            Type::I64 => "i64".to_string(),
-            Type::U8 => "i8".to_string(),
-            Type::U16 => "i16".to_string(),
-            Type::U32 => "i32".to_string(),
-            Type::U64 => "i64".to_string(),
-            Type::F32 => "float".to_string(),
-            Type::F64 => "double".to_string(),
-            Type::Pointer(inner) => format!("{}*", inner.llvm_name()),
-        }
-    }
 }
 
 impl fmt::Display for Type {
