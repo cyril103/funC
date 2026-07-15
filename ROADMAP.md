@@ -17,7 +17,7 @@ L'objectif est de découper le code source brut (chaîne de caractères) en une 
 - [x] **Écrire le Lexer**
   - [x] Option A : À la main (boucle de lecture caractère par caractère, idéal pour apprendre).
   - [ ] Option B : Avec une bibliothèque de combinateurs (ex: `nom` ou `logos` pour des performances maximales).
-- [ ] **Écrire des tests unitaires pour le Lexer**
+- [x] **Écrire des tests unitaires pour le Lexer**
   - [x] Valider la détection des flottants (`3.14`).
   - [x] Valider la distinction entre `=` (affectation) et `==` (comparaison).
   - [x] Valider la gestion des espaces et des commentaires.
