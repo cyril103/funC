@@ -1,0 +1,388 @@
+use std::collections::HashMap;
+
+use crate::ast::{BinaryOp, Block, Expr, ExprKind, Function, Program, Type};
+
+#[derive(Debug, Clone)]
+pub struct FunctionSignature {
+    pub params: Vec<Type>,
+    pub return_type: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeError {
+    pub message: String,
+    pub line: usize,
+    pub column: usize,
+}
+
+pub fn check(program: &Program) -> Result<HashMap<usize, Type>, TypeError> {
+    let mut env = TypeEnvironment::new();
+
+    for function in &program.functions {
+        if env.functions.contains_key(&function.name) {
+            return Err(TypeError {
+                message: format!("fonction '{}' déjà déclarée", function.name),
+                line: 0,
+                column: 0,
+            });
+        }
+        env.functions.insert(
+            function.name.clone(),
+            FunctionSignature {
+                params: function.params.iter().map(|p| p.ty.clone()).collect(),
+                return_type: function.return_type.clone(),
+            },
+        );
+    }
+
+    let mut inferred = HashMap::new();
+    for function in &program.functions {
+        let mut fn_env = env.clone_empty_scope();
+        for param in &function.params {
+            fn_env.locals.push(HashMap::new());
+            fn_env.locals.last_mut().unwrap().insert(param.name.clone(), param.ty.clone());
+        }
+        let body_ty = infer_block(&function.body, &mut fn_env, &env.functions, &mut inferred)?;
+        if body_ty != function.return_type {
+            return Err(TypeError {
+                message: format!(
+                    "la fonction '{}' attend un retour '{}', mais le bloc retourne '{}'",
+                    function.name, function.return_type, body_ty
+                ),
+                line: 0,
+                column: 0,
+            });
+        }
+    }
+
+    Ok(inferred)
+}
+
+#[derive(Clone)]
+struct TypeEnvironment {
+    locals: Vec<HashMap<String, Type>>,
+    functions: HashMap<String, FunctionSignature>,
+}
+
+impl TypeEnvironment {
+    fn new() -> Self {
+        Self {
+            locals: vec![HashMap::new()],
+            functions: HashMap::new(),
+        }
+    }
+
+    fn clone_empty_scope(&self) -> Self {
+        let functions = self.functions.clone();
+        Self {
+            locals: vec![HashMap::new()],
+            functions,
+        }
+    }
+
+    fn push_scope(&mut self) {
+        self.locals.push(HashMap::new());
+    }
+
+    fn pop_scope(&mut self) {
+        self.locals.pop();
+    }
+
+    fn define(&mut self, name: String, ty: Type) {
+        if let Some(scope) = self.locals.last_mut() {
+            scope.insert(name, ty);
+        }
+    }
+
+    fn resolve(&self, name: &str) -> Option<Type> {
+        for scope in self.locals.iter().rev() {
+            if let Some(ty) = scope.get(name) {
+                return Some(ty.clone());
+            }
+        }
+        None
+    }
+}
+
+fn infer_block(
+    block: &Block,
+    env: &mut TypeEnvironment,
+    functions: &HashMap<String, FunctionSignature>,
+    inferred: &mut HashMap<usize, Type>,
+) -> Result<Type, TypeError> {
+    let mut last = Type::Void;
+    env.push_scope();
+    for expr in &block.expressions {
+        last = infer_expr(expr, env, functions, inferred)?;
+    }
+    env.pop_scope();
+    Ok(last)
+}
+
+fn infer_expr(
+    expr: &Expr,
+    env: &mut TypeEnvironment,
+    functions: &HashMap<String, FunctionSignature>,
+    inferred: &mut HashMap<usize, Type>,
+) -> Result<Type, TypeError> {
+    let ty = match &expr.kind {
+        ExprKind::Let { name, ty, value } => {
+            let init_ty = infer_expr(value, env, functions, inferred)?;
+            if let Some(ann) = ty {
+                if &init_ty != ann {
+                    return Err(TypeError {
+                        message: format!(
+                            "mauvaise annotation: la variable '{}' attend {}, trouvé {}",
+                            name, ann, init_ty
+                        ),
+                        line: 0,
+                        column: 0,
+                    });
+                }
+            }
+            let final_ty = ty.clone().unwrap_or(init_ty);
+            env.define(name.clone(), final_ty.clone());
+            final_ty
+        }
+        ExprKind::Store(value, ptr) => {
+            let value_ty = infer_expr(value, env, functions, inferred)?;
+            let ptr_ty = infer_expr(ptr, env, functions, inferred)?;
+            match ptr_ty {
+                Type::Pointer(inner) => {
+                    if *inner != value_ty {
+                        return Err(TypeError {
+                            message: format!(
+                                "type incompatible in store: pointeur vers {}, valeur {}",
+                                inner, value_ty
+                            ),
+                            line: 0,
+                            column: 0,
+                        });
+                    }
+                }
+                _ => {
+                    return Err(TypeError {
+                        message: "store attend un pointeur en second argument".to_string(),
+                        line: 0,
+                        column: 0,
+                    })
+                }
+            }
+            Type::Void
+        }
+        ExprKind::IfElse {
+            condition,
+            then_block,
+            else_block,
+        } => {
+            let cond_ty = infer_expr(condition, env, functions, inferred)?;
+            if cond_ty != Type::Bool {
+                return Err(TypeError {
+                    message: format!(
+                        "condition if doit être bool, trouvé {}",
+                        cond_ty
+                    ),
+                    line: 0,
+                    column: 0,
+                });
+            }
+
+            let then_ty = infer_block(then_block, &mut env.clone_empty_scope(), functions, inferred)?;
+            let else_ty = infer_block(else_block, &mut env.clone_empty_scope(), functions, inferred)?;
+
+            if then_ty != else_ty {
+                return Err(TypeError {
+                    message: format!(
+                        "branches if/else de types différents: {} vs {}",
+                        then_ty, else_ty
+                    ),
+                    line: 0,
+                    column: 0,
+                });
+            }
+            then_ty
+        }
+        ExprKind::Binary(op, left, right) => infer_binary(*op, left, right, env, functions, inferred)?,
+        ExprKind::Identifier(name) => env
+            .resolve(name)
+            .ok_or_else(|| TypeError {
+                message: format!("identifiant '{}' inconnu", name),
+                line: 0,
+                column: 0,
+            })?,
+        ExprKind::IntLiteral(_) => Type::I64,
+        ExprKind::FloatLiteral(_) => Type::F64,
+        ExprKind::BoolLiteral(_) => Type::Bool,
+        ExprKind::Call { name, args } => {
+            let sig = functions.get(name).ok_or_else(|| TypeError {
+                message: format!("fonction '{}' inconnue", name),
+                line: 0,
+                column: 0,
+            })?;
+            if sig.params.len() != args.len() {
+                return Err(TypeError {
+                    message: format!(
+                        "appel à '{}' attend {} arguments, reçu {}",
+                        name,
+                        sig.params.len(),
+                        args.len()
+                    ),
+                    line: 0,
+                    column: 0,
+                });
+            }
+            for (idx, arg) in args.iter().enumerate() {
+                let arg_ty = infer_expr(arg, env, functions, inferred)?;
+                if arg_ty != sig.params[idx] {
+                    return Err(TypeError {
+                        message: format!(
+                            "arg {} de '{}' attend {}, trouvé {}",
+                            idx, name, sig.params[idx], arg_ty
+                        ),
+                        line: 0,
+                        column: 0,
+                    });
+                }
+            }
+            sig.return_type.clone()
+        }
+        ExprKind::Alloc(size) => {
+            let size_ty = infer_expr(size, env, functions, inferred)?;
+            if size_ty != Type::I64 && size_ty != Type::I32 {
+                return Err(TypeError {
+                    message: "alloc attend un entier de taille",
+                    line: 0,
+                    column: 0,
+                });
+            }
+            Type::Pointer(Box::new(Type::I8))
+        }
+        ExprKind::Free(ptr) => {
+            let ptr_ty = infer_expr(ptr, env, functions, inferred)?;
+            match ptr_ty {
+                Type::Pointer(_) => Type::Void,
+                _ => {
+                    return Err(TypeError {
+                        message: "free attend un pointeur".to_string(),
+                        line: 0,
+                        column: 0,
+                    })
+                }
+            }
+        }
+        ExprKind::Load(ptr) => {
+            match infer_expr(ptr, env, functions, inferred)? {
+                Type::Pointer(inner) => *inner,
+                _ => {
+                    return Err(TypeError {
+                        message: "load attend un pointeur".to_string(),
+                        line: 0,
+                        column: 0,
+                    })
+                }
+            }
+        }
+        ExprKind::SizeOf(ty) => {
+            let bytes = match ty {
+                Type::Void => 0,
+                Type::Bool => 1,
+                Type::I8 | Type::U8 => 1,
+                Type::I16 | Type::U16 => 2,
+                Type::I32 | Type::U32 | Type::F32 => 4,
+                Type::I64 | Type::U64 | Type::F64 => 8,
+                Type::Pointer(inner) => 8 + size_of_type(inner.as_ref()).unwrap_or(8),
+            };
+            inferred.insert(expr.id, Type::I64);
+            Type::I64
+        }
+        ExprKind::Block(block) => infer_block(block, env, functions, inferred)?,
+    };
+
+    inferred.insert(expr.id, ty.clone());
+    Ok(ty)
+}
+
+fn infer_binary(
+    op: BinaryOp,
+    left: &Expr,
+    right: &Expr,
+    env: &mut TypeEnvironment,
+    functions: &HashMap<String, FunctionSignature>,
+    inferred: &mut HashMap<usize, Type>,
+) -> Result<Type, TypeError> {
+    let left_ty = infer_expr(left, env, functions, inferred)?;
+    let right_ty = infer_expr(right, env, functions, inferred)?;
+
+    if left_ty != right_ty {
+        return Err(TypeError {
+            message: format!("opération '{}' incompatible entre {} et {}", op, left_ty, right_ty),
+            line: 0,
+            column: 0,
+        });
+    }
+
+    let ty = match op {
+        BinaryOp::Or | BinaryOp::And => {
+            if left_ty != Type::Bool {
+                return Err(TypeError {
+                    message: "&& et || attendent des booléens".to_string(),
+                    line: 0,
+                    column: 0,
+                });
+            }
+            Type::Bool
+        }
+        BinaryOp::Eq | BinaryOp::NotEq => {
+            if !left_ty.is_numeric() && left_ty != Type::Bool && !matches!(left_ty, Type::Pointer(_)) {
+                return Err(TypeError {
+                    message: "comparaison indisponible sur ce type".to_string(),
+                    line: 0,
+                    column: 0,
+                });
+            }
+            Type::Bool
+        }
+        BinaryOp::Lt | BinaryOp::LtEq | BinaryOp::Gt | BinaryOp::GtEq => {
+            if !(left_ty.is_numeric() || matches!(left_ty, Type::Pointer(_))) {
+                return Err(TypeError {
+                    message: "comparaison relationnelle attend un type numérique ou un pointeur".to_string(),
+                    line: 0,
+                    column: 0,
+                });
+            }
+            Type::Bool
+        }
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
+            if !left_ty.is_numeric() {
+                return Err(TypeError {
+                    message: format!("opération arithmétique non supportée sur {}", left_ty),
+                    line: 0,
+                    column: 0,
+                });
+            }
+            left_ty
+        }
+    };
+
+    Ok(ty)
+}
+
+fn size_of_type(ty: &Type) -> Option<i64> {
+    match ty {
+        Type::Void => Some(0),
+        Type::Bool => Some(1),
+        Type::I8 | Type::U8 => Some(1),
+        Type::I16 | Type::U16 => Some(2),
+        Type::I32 | Type::U32 | Type::F32 => Some(4),
+        Type::I64 | Type::U64 | Type::F64 => Some(8),
+        Type::Pointer(_) => Some(8),
+    }
+}
+
+impl std::fmt::Display for TypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}: {}", self.line, self.column, self.message)
+    }
+}
+
+impl std::error::Error for TypeError {}
