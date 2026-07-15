@@ -92,6 +92,10 @@ Syntaxe `--target` (LLVM triple):
 - `cargo run -- compile sample.fc --emit-exe --target x86_64-pc-windows-msvc --out-exe sample.exe`
 - `cargo run -- compile sample.fc --emit-obj --target aarch64-unknown-linux-gnu`
 
+Aliases supportées:
+- `native` (triple de l’hôte)
+- `x86_64`, `aarch64` (`arm64`), `x86` (`i386`) pour des cibles courantes
+
 Comportement:
 - Objet: `obj` si la cible contient `windows`, sinon `o`.
 - Exécutable: `exe` si la cible contient `windows`, sinon sans suffixe.
