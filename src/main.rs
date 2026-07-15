@@ -65,6 +65,32 @@ struct CompileArgs {
     target: Option<String>,
 }
 
+#[derive(Debug)]
+struct TargetInfo {
+    triple: Option<String>,
+    object_ext: &'static str,
+    exe_ext: &'static str,
+}
+
+impl TargetInfo {
+    fn from_target_arg(target: &Option<String>) -> Self {
+        let triple = target.as_ref().map(|t| t.to_string());
+        let normalized = target.as_deref().unwrap_or("").to_lowercase();
+        let is_windows = normalized.contains("windows");
+        let object_ext = if is_windows { "obj" } else { "o" };
+        let exe_ext = if is_windows { "exe" } else { "" };
+        Self {
+            triple,
+            object_ext,
+            exe_ext,
+        }
+    }
+
+    fn exe_suffix(&self) -> &'static str {
+        self.exe_ext
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -133,7 +159,7 @@ fn run_compile(args: CompileArgs) {
         }
 
         let object_path = if args.emit_obj || args.emit_exe {
-            Some(emit_object(&ir, &args, &args.target))
+            Some(emit_object(&ir, &args))
         } else {
             None
         };
@@ -146,24 +172,21 @@ fn run_compile(args: CompileArgs) {
 
         if args.emit_exe {
             match object_path {
-                Some(obj) => link_executable(&obj, &args, &args.target),
+                Some(obj) => link_executable(&obj, &args),
                 None => process::exit(1),
             }
         }
     }
 }
 
-fn emit_object(ir: &str, args: &CompileArgs, target: &Option<String>) -> PathBuf {
+fn emit_object(ir: &str, args: &CompileArgs) -> PathBuf {
+    let target = TargetInfo::from_target_arg(&args.target);
     let object_path = args
         .out_obj
         .clone()
         .unwrap_or_else(|| {
             let stem = default_stem(&args.input);
-            let extension = if is_windows_target(target.as_deref()) {
-                "obj"
-            } else {
-                "o"
-            };
+            let extension = target.object_ext;
             format!("{}.{}", stem, extension)
         });
 
@@ -199,7 +222,7 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &Option<String>) -> PathBuf
     cmd.arg("-filetype=obj");
     cmd.arg("-o");
     cmd.arg(&object_path);
-    if let Some(triple) = target {
+    if let Some(triple) = target.triple.as_ref() {
         cmd.arg(format!("-mtriple={triple}"));
     }
     cmd.arg(&ir_path);
@@ -211,10 +234,14 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &Option<String>) -> PathBuf
         }
         Ok(exit) => {
             eprintln!("Échec de llc (code de sortie: {exit})");
+            if let Some(triple) = target.triple {
+                eprintln!("Assurez-vous d'avoir un llvm de niveau compatible avec la cible: {triple}");
+            }
             process::exit(1);
         }
         Err(err) => {
             eprintln!("Impossible d'exécuter llc: {err}");
+            eprintln!("Installons LLVM/llc (via les paquets de votre système) puis relancez.");
             process::exit(1);
         }
     }
@@ -226,30 +253,36 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &Option<String>) -> PathBuf
     PathBuf::from(object_path)
 }
 
-fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &Option<String>) {
+fn link_executable(object_path: &PathBuf, args: &CompileArgs) {
+    let target = TargetInfo::from_target_arg(&args.target);
     let exe_path = args
         .out_exe
         .clone()
         .unwrap_or_else(|| {
             let stem = default_stem(&args.input);
-            if is_windows_target(target.as_deref()) || cfg!(windows) {
-                format!("{stem}.exe")
-            } else {
+            if target.exe_suffix().is_empty() {
                 stem
+            } else {
+                format!("{stem}.{}", target.exe_suffix())
             }
         });
 
-    let linkers = vec!["clang", "cc"];
+    let mut linkers = Vec::new();
+    linkers.push("clang");
+    linkers.push("cc");
+    if cfg!(windows) {
+        linkers.push("link");
+    }
 
     for linker in linkers {
         let mut cmd = process::Command::new(linker);
         cmd.arg(object_path.as_os_str());
-            if linker == "clang" {
-                if let Some(triple) = target {
-                    cmd.arg("-target");
-                    cmd.arg(triple);
-                }
+        if linker == "clang" {
+            if let Some(triple) = target.triple.as_ref() {
+                cmd.arg("-target");
+                cmd.arg(triple);
             }
+        }
         cmd.arg("-o");
         cmd.arg(&exe_path);
         let status = cmd.status();
@@ -271,13 +304,11 @@ fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &Option<St
     eprintln!(
         "Aucun linker disponible (clang/cc), impossible de produire un exécutable."
     );
+    eprintln!(
+        "Pour une cible '{}', vérifiez que la chaîne de compilation LLVM/Clang installée supporte ce triplet.",
+        target.triple.unwrap_or_else(|| "hôte".to_string())
+    );
     process::exit(1);
-}
-
-fn is_windows_target(target: Option<&str>) -> bool {
-    target
-        .map(|triple| triple.to_lowercase().contains("windows"))
-        .unwrap_or(false)
 }
 
 fn default_stem(input: &str) -> String {
