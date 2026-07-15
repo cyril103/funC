@@ -59,7 +59,7 @@ Avant de générer du code, il faut s'assurer que le programme est cohérent. C'
 Traduire notre AST typé et validé en instructions LLVM IR en utilisant la bibliothèque Rust `inkwell` (ou `llvm-sys`).
 
 - [ ] **Configuration de LLVM**
-  - [ ] Initialiser le contexte LLVM, le Builder et le Module.
+  - [x] Initialiser le contexte LLVM, le Builder et le Module.
   - [ ] Configurer la cible système par défaut (Target Machine).
 - [x] **Génération des types et fonctions**
   - [x] Traduire les types de FunC vers les types LLVM correspondants (`i32` de FunC -> `i32` de LLVM, `f64` -> `double`, etc.).
