@@ -63,9 +63,9 @@
 3. Documentation utilisateur
   - ✅ README simplifié avec flux de compilation en 3 lignes
 4. CI
-   - Workflow GitHub Actions : build + tests + check docs
+   - ✅ Workflow GitHub Actions : build + tests + check docs
 5. Tests d’intégration
-   - Ajouter une suite régression parser / typecheck / codegen
+  - Ajouter une suite régression parser / typecheck / codegen
 
 ## 🌌 Objectif 5 — Pistes avancées
 1. Modules
