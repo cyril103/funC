@@ -196,6 +196,14 @@ impl Generator {
                 then_block,
                 else_block,
             } => self.emit_if(condition, then_block, else_block),
+            ExprKind::Not(expr) => {
+                let expr = self.emit_expr(expr);
+                let expr = expr.0.expect("unary ! without value").into_int_value();
+                let value = self
+                    .expect(self.builder_ref().build_not(expr, "not"), "not")
+                    .as_basic_value_enum();
+                (Some(value), Type::Bool)
+            }
             ExprKind::Binary(op, left, right) => {
                 if matches!(op, BinaryOp::Or | BinaryOp::And) {
                     self.emit_logical(op, left, right)
