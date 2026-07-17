@@ -33,10 +33,10 @@
 ### Phase 4 — Préparation release 1.0 (1–2 semaines)
 - [x] Finaliser une suite de régression complète (parsing/typecheck/codegen/runtime).
 - [x] Rédiger le guide de migration / upgrade.
-- [ ] Publier une page `Exemples` par domaine (memoire, contrôle, modules, CLI).
+- [x] Publier une page `Exemples` par domaine (memoire, contrôle, modules, CLI).
 - [ ] Rédiger notes de version v1.0 avec limites connues et compatibilité.
 
 ## Indicateur d’avancement
 - Priorité: livrer chaque phase par lot, avec vérification `cargo build` + jeux de tests pertinents par phase.
-- Statut actuel: Phase 4 partiellement terminée — suite de régression + guide migration à jour; reste la page Exemples et les notes de version.
+- Statut actuel: Phase 4 en cours — suite de régression, guide migration et page Exemples à jour; restent les notes de version v1.0.
 - Objectif cible: stabiliser avant d’ajouter de nouvelles fonctionnalités de syntaxe.

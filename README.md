@@ -144,3 +144,7 @@ Comportement d'erreur:
 ## 🧭 Documentation de migration
 
 - `MIGRATION.md` : guide de migration, vérifications recommandées et points de rupture connus.
+
+## 🧪 Périmètre d’exemples
+
+- `EXAMPLES.md` : inventaire d’exemples classés par domaine (contrôle, mémoire, modules, CLI).
