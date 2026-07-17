@@ -152,3 +152,4 @@ Comportement d'erreur:
 ## 📣 Notes de version
 
 - `RELEASE_NOTES_v1.0.md` : notes de release, limites connues et points de compatibilité.
+- `RELEASE_CHECKLIST_v1.1.md` : checklist de validation pour la préparation de la release 1.1.
