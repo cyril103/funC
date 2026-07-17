@@ -412,6 +412,15 @@ mod tests_legacy {
     }
 
     #[test]
+    fn lex_string_literal_with_escape() {
+        let tokens = Lexer::new(r#""abc\n\t\"""#).tokenize().unwrap();
+        assert_eq!(
+            tokens[0].kind,
+            TokenKind::StringLiteral("abc\n\t\"".to_string())
+        );
+    }
+
+    #[test]
     fn lex_distinguishes_assign_and_equal() {
         let tokens = Lexer::new("x = y == z").tokenize().unwrap();
         assert_eq!(tokens[0].kind, TokenKind::Identifier("x".to_string()));

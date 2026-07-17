@@ -391,6 +391,16 @@ impl Generator {
                 Some(self.context_ref().bool_type().const_int(*value as u64, false).as_basic_value_enum()),
                 Type::Bool,
             ),
+            ExprKind::StringLiteral(value) => {
+                let name = self.next_label("str");
+                let ptr = self
+                    .expect(
+                        self.builder_ref().build_global_string_ptr(value, &name),
+                        "global string",
+                    )
+                    .as_basic_value_enum();
+                (Some(ptr), Type::Pointer(Box::new(Type::I8)))
+            }
             ExprKind::Call { name, args } => {
                 let resolved = match name.as_str() {
                     "func::assert" => "assert",

@@ -373,6 +373,7 @@ impl Parser {
             | Some(TokenKind::FloatLiteral(_))
             | Some(TokenKind::True)
             | Some(TokenKind::False)
+            | Some(TokenKind::StringLiteral(_))
             | Some(TokenKind::Identifier(_))
             | Some(TokenKind::Load)
             | Some(TokenKind::Alloc)
@@ -519,6 +520,14 @@ impl Parser {
                     Ok(self.expr(ExprKind::FloatLiteral(v)))
                 } else {
                     Err(self.expected("litérale flottante"))
+                }
+            }
+            Some(TokenKind::StringLiteral(_)) => {
+                let tok = self.bump().unwrap();
+                if let TokenKind::StringLiteral(value) = tok.kind {
+                    Ok(self.expr(ExprKind::StringLiteral(value)))
+                } else {
+                    Err(self.expected("litérale chaîne"))
                 }
             }
             Some(TokenKind::True) => {
@@ -1006,6 +1015,27 @@ mod tests {
                 }
             }
             _ => panic!("expression première attendue comme let"),
+        }
+    }
+
+    #[test]
+    fn parse_string_literal_expression() {
+        let source = r#"fn main() -> *i8 { return "Hello\\n"; }"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let expr = &program.functions[0].body.expressions[0];
+        match &expr.kind {
+            ExprKind::Return(return_expr) => {
+                let return_expr = return_expr
+                    .as_ref()
+                    .expect("return without value in string literal test");
+                match &return_expr.kind {
+                    ExprKind::StringLiteral(value) => assert_eq!(value, "Hello\\n"),
+                    _ => panic!("return should contain string literal"),
+                }
+            }
+            _ => panic!("first expression should be return"),
         }
     }
 

@@ -566,6 +566,12 @@ mod tests {
         );
         assert!(check(&program, "").is_ok());
     }
+
+    #[test]
+    fn string_literal_is_checked_as_pointer_to_i8() {
+        let program = parse_program(r#"fn main() -> *i8 { return "abc"; }"#);
+        assert!(check(&program, "").is_ok());
+    }
 }
 
 #[derive(Clone)]
@@ -1087,6 +1093,7 @@ fn infer_expr(
         ExprKind::IntLiteral(_) => ExprCompletion::Value(Type::I64),
         ExprKind::FloatLiteral(_) => ExprCompletion::Value(Type::F64),
         ExprKind::BoolLiteral(_) => ExprCompletion::Value(Type::Bool),
+        ExprKind::StringLiteral(_) => ExprCompletion::Value(Type::Pointer(Box::new(Type::I8))),
         ExprKind::Call { name, args } => {
             let sig = functions.get(name).ok_or_else(|| TypeError {
                 message: format!("fonction '{}' inconnue", name),

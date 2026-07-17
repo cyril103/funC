@@ -88,6 +88,7 @@ pub enum ExprKind {
     IntLiteral(i64),
     FloatLiteral(f64),
     BoolLiteral(bool),
+    StringLiteral(String),
     Call {
         name: String,
         args: Vec<Expr>,
@@ -320,6 +321,10 @@ impl Expr {
             ExprKind::IntLiteral(value) => write!(f, "{}{}", pad, value)?,
             ExprKind::FloatLiteral(value) => write!(f, "{}{}", pad, value)?,
             ExprKind::BoolLiteral(value) => write!(f, "{}{}", pad, value)?,
+            ExprKind::StringLiteral(value) => {
+                let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+                write!(f, "{}\"{}\"", pad, escaped)?
+            }
             ExprKind::Call { name, args } => {
                 write!(f, "{}{}(", pad, name)?;
                 for (idx, arg) in args.iter().enumerate() {
