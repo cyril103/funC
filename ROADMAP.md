@@ -13,7 +13,7 @@
 - [x] Ajouter des tests d’intégration « source -> exécutable » pour Linux/Windows.
 
 ### Phase 1 — UX compilateur (2 semaines)
-- [ ] Harmoniser les erreurs/diagnostics avec codes (catégories): syntaxe, sémantique, backend.
+- [x] Harmoniser les erreurs/diagnostics avec codes (catégories): syntaxe, sémantique, backend.
 - [ ] Afficher des spans multi-lignes quand c’est utile (`if`, `for`, `import`).
 - [x] Ajouter une commande `funC validate` qui combine parse + typecheck + diagnostics mémoire.
 - [ ] Documenter le comportement `import` (résolution des chemins, erreurs).

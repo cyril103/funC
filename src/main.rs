@@ -119,6 +119,37 @@ struct ValidateArgs {
     warn_memory: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum DiagnosticCategory {
+    Syntax,
+    Semantic,
+    Backend,
+    Memory,
+    Io,
+}
+
+impl DiagnosticCategory {
+    const fn code(&self) -> &'static str {
+        match self {
+            Self::Syntax => "SYN-001",
+            Self::Semantic => "SEM-001",
+            Self::Backend => "BEG-001",
+            Self::Memory => "MEM-001",
+            Self::Io => "IO-001",
+        }
+    }
+
+    const fn label(&self) -> &'static str {
+        match self {
+            Self::Syntax => "Syntaxe",
+            Self::Semantic => "Sémantique",
+            Self::Backend => "Backend",
+            Self::Memory => "Mémoire",
+            Self::Io => "Entrées-sorties",
+        }
+    }
+}
+
 #[derive(Debug)]
 struct TargetInfo {
     triple: String,
@@ -161,7 +192,10 @@ fn run_fmt(args: FmtArgs) {
     let source = match fs::read_to_string(&args.input) {
         Ok(s) => s,
         Err(err) => {
-            eprintln!("Impossible de lire le fichier {}: {err}", args.input);
+            print_simple_diagnostic(
+                DiagnosticCategory::Io,
+                &format!("Impossible de lire le fichier {}: {err}", args.input),
+            );
             process::exit(1);
         }
     };
@@ -169,7 +203,14 @@ fn run_fmt(args: FmtArgs) {
     let tokens = match Lexer::new(&source).tokenize() {
         Ok(tokens) => tokens,
         Err(err) => {
-            eprintln!("Erreur lexer: {err}");
+            print_diagnostic(
+                DiagnosticCategory::Syntax,
+                &source,
+                err.line,
+                err.column,
+                &format!("Erreur lexer: {err}"),
+                None,
+            );
             process::exit(1);
         }
     };
@@ -178,8 +219,8 @@ fn run_fmt(args: FmtArgs) {
         Ok(program) => program,
         Err(err) => {
             print_diagnostic(
+                DiagnosticCategory::Syntax,
                 &source,
-                "Erreur parser",
                 err.line,
                 err.column,
                 &err.message,
@@ -210,7 +251,10 @@ fn run_validate(args: ValidateArgs) {
     let source = match fs::read_to_string(&args.input) {
         Ok(s) => s,
         Err(err) => {
-            eprintln!("Impossible de lire le fichier {}: {err}", args.input);
+            print_simple_diagnostic(
+                DiagnosticCategory::Io,
+                &format!("Impossible de lire le fichier {}: {err}", args.input),
+            );
             process::exit(1);
         }
     };
@@ -226,8 +270,8 @@ fn run_validate(args: ValidateArgs) {
 
     if let Err(err) = typecheck::check(&parsed, &source) {
         print_diagnostic(
+            DiagnosticCategory::Semantic,
             &source,
-            "Erreur typage",
             err.line,
             err.column,
             &err.message,
@@ -244,8 +288,8 @@ fn run_validate(args: ValidateArgs) {
             println!("Avertissements mémoire (heuristique):");
             for warning in warnings {
                 print_diagnostic(
+                    DiagnosticCategory::Memory,
                     &source,
-                    "Avertissement mémoire",
                     warning.line,
                     warning.column,
                     &warning.message,
@@ -276,7 +320,10 @@ fn run_compile(args: CompileArgs) {
     let source = match fs::read_to_string(&args.input) {
         Ok(s) => s,
         Err(err) => {
-            eprintln!("Impossible de lire le fichier {}: {err}", args.input);
+            print_simple_diagnostic(
+                DiagnosticCategory::Io,
+                &format!("Impossible de lire le fichier {}: {err}", args.input),
+            );
             process::exit(1);
         }
     };
@@ -298,8 +345,8 @@ fn run_compile(args: CompileArgs) {
         Ok(infos) => infos,
         Err(err) => {
             print_diagnostic(
+                DiagnosticCategory::Semantic,
                 &source,
-                "Erreur typage",
                 err.line,
                 err.column,
                 &err.message,
@@ -317,8 +364,8 @@ fn run_compile(args: CompileArgs) {
             println!("Avertissements mémoire (heuristique, non bloquants):");
             for warning in warnings {
                 print_diagnostic(
+                    DiagnosticCategory::Memory,
                     &source,
-                    "Avertissement mémoire",
                     warning.line,
                     warning.column,
                     &warning.message,
@@ -358,7 +405,10 @@ fn run_compile(args: CompileArgs) {
         if args.emit_ir {
             if let Some(path) = &args.out {
                 if let Err(err) = fs::write(path, &ir) {
-                    eprintln!("Échec d'écriture IR {path}: {err}");
+                    print_simple_diagnostic(
+                        DiagnosticCategory::Io,
+                        &format!("Échec d'écriture IR {path}: {err}"),
+                    );
                     process::exit(1);
                 }
                 println!("IR écrite dans {path}");
@@ -410,7 +460,10 @@ fn emit_asm(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
                 process::id()
             ));
             if let Err(err) = fs::write(&fallback, ir) {
-                eprintln!("Échec d'écriture IR temporaire {fallback:?}: {err}");
+                print_simple_diagnostic(
+                    DiagnosticCategory::Backend,
+                    &format!("Échec d'écriture IR temporaire {fallback:?}: {err}"),
+                );
                 process::exit(1);
             }
             fallback
@@ -422,7 +475,10 @@ fn emit_asm(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
             process::id()
         ));
         if let Err(err) = fs::write(&fallback, ir) {
-            eprintln!("Échec d'écriture IR temporaire {fallback:?}: {err}");
+            print_simple_diagnostic(
+                DiagnosticCategory::Backend,
+                &format!("Échec d'écriture IR temporaire {fallback:?}: {err}"),
+            );
             process::exit(1);
         }
         fallback
@@ -445,7 +501,10 @@ fn emit_asm(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
             PathBuf::from(asm_path)
         }
         Ok(exit) => {
-            eprintln!("Échec de llc en mode assembleur (code de sortie: {exit})");
+            print_simple_diagnostic(
+                DiagnosticCategory::Backend,
+                &format!("Échec de llc en mode assembleur (code de sortie: {exit})"),
+            );
             eprintln!(
                 "Assurez-vous d'avoir un llvm de niveau compatible avec la cible: {}",
                 target.triple
@@ -453,7 +512,10 @@ fn emit_asm(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
             process::exit(1);
         }
         Err(err) => {
-            eprintln!("Impossible d'exécuter llc: {err}");
+            print_simple_diagnostic(
+                DiagnosticCategory::Backend,
+                &format!("Impossible d'exécuter llc: {err}"),
+            );
             eprintln!("Installez LLVM/llc puis relancez.");
             process::exit(1);
         }
@@ -480,7 +542,10 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
                 process::id()
             ));
             if let Err(err) = fs::write(&fallback, ir) {
-                eprintln!("Échec d'écriture IR temporaire {fallback:?}: {err}");
+                print_simple_diagnostic(
+                    DiagnosticCategory::Backend,
+                    &format!("Échec d'écriture IR temporaire {fallback:?}: {err}"),
+                );
                 process::exit(1);
             }
             fallback
@@ -492,7 +557,10 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
             process::id()
         ));
         if let Err(err) = fs::write(&fallback, ir) {
-            eprintln!("Échec d'écriture IR temporaire {fallback:?}: {err}");
+            print_simple_diagnostic(
+                DiagnosticCategory::Backend,
+                &format!("Échec d'écriture IR temporaire {fallback:?}: {err}"),
+            );
             process::exit(1);
         }
         fallback
@@ -514,7 +582,10 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
             println!("Objet écrit dans {object_path}");
         }
         Ok(exit) => {
-            eprintln!("Échec de llc (code de sortie: {exit})");
+            print_simple_diagnostic(
+                DiagnosticCategory::Backend,
+                &format!("Échec de llc (code de sortie: {exit})"),
+            );
             eprintln!(
                 "Assurez-vous d'avoir un llvm de niveau compatible avec la cible: {}",
                 target.triple
@@ -522,7 +593,10 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
             process::exit(1);
         }
         Err(err) => {
-            eprintln!("Impossible d'exécuter llc: {err}");
+            print_simple_diagnostic(
+                DiagnosticCategory::Backend,
+                &format!("Impossible d'exécuter llc: {err}"),
+            );
             eprintln!("Installons LLVM/llc (via les paquets de votre système) puis relancez.");
             process::exit(1);
         }
@@ -555,7 +629,9 @@ fn load_module_program(
 ) -> Result<(), String> {
     let canonical = path.canonicalize().map_err(|err| {
         format!(
-            "Impossible de localiser le module '{}': {err}",
+            "[{}] {}: Impossible de localiser le module '{}': {err}",
+            DiagnosticCategory::Io.code(),
+            DiagnosticCategory::Io.label(),
             path.to_string_lossy()
         )
     })?;
@@ -566,13 +642,20 @@ fn load_module_program(
     visited.insert(canonical.clone());
 
     let source = fs::read_to_string(&canonical).map_err(|err| {
-        format!("Impossible de lire le module '{}': {err}", canonical.display())
+        format!(
+            "[{}] {}: Impossible de lire le module '{}': {err}",
+            DiagnosticCategory::Io.code(),
+            DiagnosticCategory::Io.label(),
+            canonical.display()
+        )
     })?;
 
     let lexed = Lexer::new(&source)
         .tokenize()
         .map_err(|err| format!(
-            "{}:{}:{}: Erreur lexer: {}",
+            "[{}] {} {}:{}:{}: Erreur lexer: {}",
+            DiagnosticCategory::Syntax.code(),
+            DiagnosticCategory::Syntax.label(),
             canonical.display(),
             err.line,
             err.column,
@@ -582,7 +665,9 @@ fn load_module_program(
     let parsed = FuncParser::new(lexed)
         .parse_program()
         .map_err(|err| format!(
-            "{}:{}:{}: Erreur parser: {}",
+            "[{}] {} {}:{}:{}: Erreur parser: {}",
+            DiagnosticCategory::Syntax.code(),
+            DiagnosticCategory::Syntax.label(),
             canonical.display(),
             err.line,
             err.column,
@@ -637,11 +722,11 @@ fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &TargetInf
 
     for linker in linkers {
         let mut cmd = process::Command::new(linker);
-            cmd.arg(object_path.as_os_str());
-            if linker == "clang" {
-                cmd.arg("-target");
-                cmd.arg(&target.triple);
-            }
+        cmd.arg(object_path.as_os_str());
+        if linker == "clang" {
+            cmd.arg("-target");
+            cmd.arg(&target.triple);
+        }
         cmd.arg("-o");
         cmd.arg(&exe_path);
         let status = cmd.status();
@@ -652,16 +737,23 @@ fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &TargetInf
                 return;
             }
             Ok(exit) => {
-                eprintln!("Échec de {linker} (code de sortie: {exit}), tentative suivante...");
+                print_simple_diagnostic(
+                    DiagnosticCategory::Backend,
+                    &format!("Échec de {linker} (code de sortie: {exit}), tentative suivante..."),
+                );
             }
             Err(err) => {
-                eprintln!("{linker} indisponible: {err}");
+                print_simple_diagnostic(
+                    DiagnosticCategory::Backend,
+                    &format!("{linker} indisponible: {err}"),
+                );
             }
         }
     }
 
-    eprintln!(
-        "Aucun linker disponible (clang/cc), impossible de produire un exécutable."
+    print_simple_diagnostic(
+        DiagnosticCategory::Backend,
+        "Aucun linker disponible (clang/cc), impossible de produire un exécutable.",
     );
     eprintln!(
         "Pour une cible '{}', vérifiez que la chaîne de compilation LLVM/Clang installée supporte ce triplet.",
@@ -705,18 +797,22 @@ fn normalize_exe_path(out_exe: String, target: &TargetInfo) -> PathBuf {
 }
 
 fn print_diagnostic(
+    category: DiagnosticCategory,
     source: &str,
-    kind: &str,
     line: usize,
     column: usize,
     message: &str,
     suggestion: Option<&str>,
 ) {
-    eprintln!("{kind} en {line}:{column}: {message}");
-
     if line == 0 || column == 0 {
+        eprintln!("[{}] {}: {message}", category.code(), category.label());
+        if let Some(suggestion) = suggestion {
+            eprintln!("  suggestion: {suggestion}");
+        }
         return;
     }
+
+    eprintln!("[{}] {} en {line}:{column}: {message}", category.code(), category.label());
 
     let lines: Vec<&str> = source.lines().collect();
     if let Some(context) = lines.get(line.saturating_sub(1)) {
@@ -734,6 +830,10 @@ fn print_diagnostic(
     if let Some(suggestion) = suggestion {
         eprintln!("  suggestion: {suggestion}");
     }
+}
+
+fn print_simple_diagnostic(category: DiagnosticCategory, message: &str) {
+    eprintln!("[{}] {}: {}", category.code(), category.label(), message);
 }
 
 fn looks_like_triple(value: &str) -> bool {
