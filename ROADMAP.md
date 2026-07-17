@@ -1,50 +1,41 @@
-# 🗺️ Feuille de route FunC — Bilan & suite
+# Roadmap FunC — Refonte
 
-## ✅ Fonctions livrées (État actuel)
+## Bilan de départ
+- Le compilateur est opérationnel pour un cycle complet: parsing, typecheck, génération LLVM IR, génération objet et exécutable.
+- Les fonctionnalités de langage de base et intermédiaires sont implémentées (contrôle de flux, fonctions, mémoire, struct/enum, modules, builtin mémoire, debug info).
+- La qualité code compile sans warnings.
 
-### Objectif 1 — MVP robuste
-- ✅ `if / else` enrichi (`else if`, parenthèses optionnelles, opérateur `!`)
-- ✅ Diagnostics parser/typecheck avec `line:column`, extrait source et suggestion
-- ✅ `funC compile --check`
-- ✅ `--emit-asm` pour la génération assembleur
-- ✅ Normalisation de `--out-exe` multi-cibles
+## Nouvelle feuille de route
 
-### Objectif 2 — Langage plus expressif
-- ✅ `while`, `for`
-- ✅ `return` explicite
-- ✅ `let mut`
-- ✅ Robustesse des appels (signature/arity/types)
-- ✅ Tableaux statiques `[T; N]` et indexation `arr[i]`
+### Phase 0 — Fiabilisation (1 semaine)
+- [ ] Stabiliser la sémantique de `size_of` (support complet pour les types composés).
+- [ ] Finaliser la couverture de types pour l’IR (struct/enum/array).
+- [ ] Ajouter des tests d’intégration « source -> exécutable » pour Linux/Windows.
 
-### Objectif 3 — Sémantique forte
-- ✅ Détection de shadowing
-- ✅ Variables non utilisées
-- ✅ Vérification de flux `if/else`
-- ✅ Gestion mémoire (`alloc`, `free`, `--warn-memory`)
-- ✅ Erreurs de type enrichies (entiers/signes/pointeurs)
-- ✅ Constant folding de base (arithmétique, booléens, opérations d’égalité)
+### Phase 1 — UX compilateur (2 semaines)
+- [ ] Harmoniser les erreurs/diagnostics avec codes (catégories): syntaxe, sémantique, backend.
+- [ ] Afficher des spans multi-lignes quand c’est utile (`if`, `for`, `import`).
+- [ ] Ajouter une commande `funC validate` qui combine parse + typecheck + diagnostics mémoire.
+- [ ] Documenter le comportement `import` (résolution des chemins, erreurs).
 
-### Objectif 4 — Outils & ergonomie
-- ✅ `funC fmt` + mode `--check`
-- ✅ Exemples structurés dans `examples/*`
-- ✅ README orienté usage
-- ✅ CI GitHub Actions opérationnelle
-- ✅ Régression parser / typecheck / codegen
+### Phase 2 — Productivité langage (2–3 semaines)
+- [ ] Élargir le constant folding (comparaisons booléennes et propagation de constantes simples).
+- [ ] Optimisations locales sûres (élimination de code mort local / branchements inutiles).
+- [ ] Ajouter des helpers de style (`assert`, `panic` minimal) au niveau bibliothèque standard.
+- [ ] Définir une mini-std (`func::`) pour les utilitaires mémoire et I/O minimal.
 
-### Objectif 5 — Pistes avancées
-- ✅ Imports multi-fichiers (`import`)
-- ✅ Types complexes (`struct`, `enum`)
-- ✅ Builtins mémoire (`memcpy`, `memset`, `realloc`)
-- ✅ `--debug-info` (LLDB/GDB-friendly via `llc -g`)
+### Phase 3 — Backend et runtime (2–3 semaines)
+- [ ] Vérifier les pipelines cross-cible sur `llc/clang` (obj/exe).
+- [ ] Ajouter des passes backend optionnelles (désactivation du `opt` agressif par défaut, profil d’activation).
+- [ ] Renforcer le support de debug info en mode exécutable.
+- [ ] Améliorer la sortie objet/exécutable avec messages d’échec contextuels.
 
-## 🚩 Bilan qualité (post-roadmap)
-- ✅ Parse + typecheck + génération IR/objet/exécutable fonctionnels.
-- ✅ Les `.fc` sont correctement isolés dans `examples/`.
-- ✅ Le projet peut être compilé et vérifié en `--check`.
-- ⚠️ Ajustements de qualité en cours: suppression des warnings de compilation.
+### Phase 4 — Préparation release 1.0 (1–2 semaines)
+- [ ] Finaliser une suite de régression complète (parsing/typecheck/codegen/runtime).
+- [ ] Rédiger le guide de migration / upgrade.
+- [ ] Publier une page `Exemples` par domaine (memoire, contrôle, modules, CLI).
+- [ ] Rédiger notes de version v1.0 avec limites connues et compatibilité.
 
-## 🔜 Prochaine vague recommandée (stabilisation)
-- ✅ Nettoyage complet des warnings compiler (objectif immédiat).
-- ✅ Meilleure couverture des cas `size_of`, struct/enum en backend.
-- ✅ Erreurs de modules/CLI plus ciblées (cas d’échec de compilation lisibles).
-- ✅ Tests d’intégration “pipeline complet” (source → exe par cible).
+## Indicateur d’avancement
+- Priorité: livrer chaque phase par lot, avec vérification `cargo build` + jeux de tests pertinents par phase.
+- Objectif cible: stabiliser avant d’ajouter de nouvelles fonctionnalités de syntaxe.
