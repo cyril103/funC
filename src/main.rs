@@ -486,10 +486,10 @@ fn emit_asm(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
     cmd.arg(&asm_path);
     cmd.arg(format!("-mtriple={}", target.triple));
     cmd.arg(&input_path);
-    let status = cmd.status();
+    let status = cmd.output();
 
     match status {
-        Ok(exit) if exit.success() => {
+        Ok(output) if output.status.success() => {
             println!("Assembleur écrit dans {asm_path}");
             if cleanup_input_path {
                 let _ = fs::remove_file(&ir_path);
@@ -499,11 +499,22 @@ fn emit_asm(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
             }
             PathBuf::from(asm_path)
         }
-        Ok(exit) => {
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
             print_simple_diagnostic(
                 DiagnosticCategory::Backend,
-                &format!("Échec de llc en mode assembleur (code de sortie: {exit})"),
+                &format!(
+                    "Échec de llc en mode assembleur ({asm_path}) pour {} (code: {})",
+                    target.triple, output.status
+                ),
             );
+            if !stdout.is_empty() {
+                eprintln!("Détails llc (stdout): {stdout}");
+            }
+            if !stderr.is_empty() {
+                eprintln!("Détails llc (stderr): {stderr}");
+            }
             eprintln!(
                 "Assurez-vous d'avoir un llvm de niveau compatible avec la cible: {}",
                 target.triple
@@ -549,10 +560,10 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
     cmd.arg(&object_path);
     cmd.arg(format!("-mtriple={}", target.triple));
     cmd.arg(&input_path);
-    let status = cmd.status();
+    let status = cmd.output();
 
     match status {
-        Ok(exit) if exit.success() => {
+        Ok(output) if output.status.success() => {
             println!("Objet écrit dans {object_path}");
             if cleanup_input_path {
                 let _ = fs::remove_file(&ir_path);
@@ -561,11 +572,22 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
                 let _ = fs::remove_file(&input_path);
             }
         }
-        Ok(exit) => {
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
             print_simple_diagnostic(
                 DiagnosticCategory::Backend,
-                &format!("Échec de llc (code de sortie: {exit})"),
+                &format!(
+                    "Échec de llc vers objet ({object_path}) pour {} (code: {})",
+                    target.triple, output.status
+                ),
             );
+            if !stdout.is_empty() {
+                eprintln!("Détails llc (stdout): {stdout}");
+            }
+            if !stderr.is_empty() {
+                eprintln!("Détails llc (stderr): {stderr}");
+            }
             eprintln!(
                 "Assurez-vous d'avoir un llvm de niveau compatible avec la cible: {}",
                 target.triple
@@ -651,15 +673,28 @@ fn apply_backend_profile(
     cmd.arg(ir_path);
     cmd.arg("-o");
     cmd.arg(&optimized);
-    let status = cmd.status();
+    let status = cmd.output();
 
     match status {
-        Ok(exit) if exit.success() => (optimized, true),
-        Ok(exit) => {
+        Ok(output) if output.status.success() => (optimized, true),
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
             print_simple_diagnostic(
                 DiagnosticCategory::Backend,
-                &format!("Échec de opt (code de sortie: {exit})"),
+                &format!(
+                    "Échec de opt ({}) pour profil {:?} (code: {})",
+                    ir_path.display(),
+                    profile,
+                    output.status
+                ),
             );
+            if !stdout.is_empty() {
+                eprintln!("Détails opt (stdout): {stdout}");
+            }
+            if !stderr.is_empty() {
+                eprintln!("Détails opt (stderr): {stderr}");
+            }
             process::exit(1);
         }
         Err(err) => {
@@ -804,18 +839,30 @@ fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &TargetInf
         }
         cmd.arg("-o");
         cmd.arg(&exe_path);
-        let status = cmd.status();
+        let status = cmd.output();
 
         match status {
-            Ok(exit) if exit.success() => {
+            Ok(output) if output.status.success() => {
                 println!("Exécutable écrit dans {}", exe_path.display());
                 return;
             }
-            Ok(exit) => {
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 print_simple_diagnostic(
                     DiagnosticCategory::Backend,
-                    &format!("Échec de {linker} (code de sortie: {exit}), tentative suivante..."),
+                    &format!(
+                        "Échec de {linker} pour {} (code: {}), tentative suivante...",
+                        exe_path.display(),
+                        output.status
+                    ),
                 );
+                if !stdout.is_empty() {
+                    eprintln!("Détails {linker} (stdout): {stdout}");
+                }
+                if !stderr.is_empty() {
+                    eprintln!("Détails {linker} (stderr): {stderr}");
+                }
             }
             Err(err) => {
                 print_simple_diagnostic(

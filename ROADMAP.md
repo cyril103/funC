@@ -28,7 +28,7 @@
 - [x] Vérifier les pipelines cross-cible sur `llc/clang` (obj/exe).
 - [x] Ajouter des passes backend optionnelles (désactivation du `opt` agressif par défaut, profil d’activation).
 - [x] Renforcer le support de debug info en mode exécutable.
-- [ ] Améliorer la sortie objet/exécutable avec messages d’échec contextuels.
+- [x] Améliorer la sortie objet/exécutable avec messages d’échec contextuels.
 
 ### Phase 4 — Préparation release 1.0 (1–2 semaines)
 - [ ] Finaliser une suite de régression complète (parsing/typecheck/codegen/runtime).
@@ -38,5 +38,5 @@
 
 ## Indicateur d’avancement
 - Priorité: livrer chaque phase par lot, avec vérification `cargo build` + jeux de tests pertinents par phase.
-- Statut actuel: Phase 3 en cours — debug info exécutable activée avec `--debug-info` (flag transmis au linker), tests `backend_regression_respects_backend_pass_profiles` et `integration_regression_linux_build_executable_with_debug_info`.
+- Statut actuel: Phase 3 terminée — passes backend optionnelles + debug info exécutable + diagnostics de backend/obj/exe enrichis (messages de contexte).
 - Objectif cible: stabiliser avant d’ajouter de nouvelles fonctionnalités de syntaxe.
