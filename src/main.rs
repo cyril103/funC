@@ -39,6 +39,10 @@ struct CompileArgs {
     #[arg(long)]
     emit_typed: bool,
 
+    /// Analyse seulement: parse + typecheck sans génération d'IR/code
+    #[arg(long)]
+    check: bool,
+
     /// Affiche l'IR LLVM textuelle dans la sortie standard
     #[arg(long)]
     emit_ir: bool,
@@ -174,6 +178,14 @@ fn run_compile(args: CompileArgs) {
         for (id, ty) in &types {
             println!("expr #{id}: {ty}");
         }
+    }
+
+    if args.check {
+        if args.emit_ir || args.emit_obj || args.emit_exe {
+            eprintln!("`--check` ignore l'option de génération backend: aucun IR/objet/exécutable produit.");
+        }
+        println!("Compilation check OK: {}", args.input);
+        return;
     }
 
     let target_info = match TargetInfo::from_target_arg(&args.target) {

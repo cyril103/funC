@@ -7,7 +7,7 @@
 4. ✅ Accepter la condition `if` entre parenthèses
 5. ✅ Ajouter l’opérateur `!` booléen
 6. ✅ Préparer l’erreur parser/typecheck avec `line:column`, extrait source et suggestion
-7. Implémenter `funC compile --check` (analyse seule)
+7. ✅ Implémenter `funC compile --check` (analyse seule)
 8. Implémenter `funC asm` via `--emit-asm`
 9. Uniformiser la sortie exécutable avec `--out-exe` sur toutes les cibles
 
@@ -20,8 +20,8 @@
    - ✅ Enrichir toutes les erreurs parser/typecheck avec `line:column`
    - ✅ Afficher un extrait de source et une suggestion de correction
 3. Commande CLI `check`
-   - Ajouter `funC compile` avec mode d'analyse-only (`--check`)
-   - Parse + typage sans génération d'IR
+   - ✅ Ajouter `funC compile` avec mode d'analyse-only (`--check`)
+   - ✅ Parse + typage sans génération d'IR
 4. Commande CLI `asm`
    - Ajouter `--emit-asm` via `llc -filetype=asm`
 5. Cohérence de sortie
