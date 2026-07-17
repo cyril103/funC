@@ -64,6 +64,10 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
             });
         }
         env.struct_types.insert(struct_decl.name.clone());
+        env.struct_layouts.insert(
+            struct_decl.name.clone(),
+            struct_decl.fields.iter().map(|field| field.ty.clone()).collect(),
+        );
     }
 
     for enum_decl in &program.enums {
@@ -85,6 +89,7 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
             });
         }
         env.enum_types.insert(enum_decl.name.clone());
+        env.enum_variants.insert(enum_decl.name.clone(), enum_decl.variants.len());
     }
 
     for struct_decl in &program.structs {
@@ -375,6 +380,30 @@ mod tests {
     }
 
     #[test]
+    fn sizeof_struct_type_is_valid() {
+        let program = parse_program(
+            "struct Point { x: i64; y: i64; } fn main() -> i64 { sizeof(Point) }",
+        );
+        assert!(check(&program, "").is_ok());
+    }
+
+    #[test]
+    fn sizeof_enum_type_is_valid() {
+        let program = parse_program(
+            "enum Color { Red, Green, Blue } fn main() -> i64 { sizeof(Color) }",
+        );
+        assert!(check(&program, "").is_ok());
+    }
+
+    #[test]
+    fn sizeof_array_of_struct_is_valid() {
+        let program = parse_program(
+            "struct Pair { x: i32; y: i32; } fn main() -> i64 { sizeof([Pair; 3]) }",
+        );
+        assert!(check(&program, "").is_ok());
+    }
+
+    #[test]
     fn detect_shadowing_in_same_scope() {
         let program = parse_program("fn main() -> i64 { let x = 1; let x = 2; return x; }");
         let err = check(&program, "").unwrap_err();
@@ -453,6 +482,8 @@ struct TypeEnvironment {
     functions: HashMap<String, FunctionSignature>,
     struct_types: HashSet<String>,
     enum_types: HashSet<String>,
+    struct_layouts: HashMap<String, Vec<Type>>,
+    enum_variants: HashMap<String, usize>,
     return_type: Option<Type>,
     saw_return: bool,
 }
@@ -488,6 +519,8 @@ impl TypeEnvironment {
             functions: HashMap::new(),
             struct_types: HashSet::new(),
             enum_types: HashSet::new(),
+            struct_layouts: HashMap::new(),
+            enum_variants: HashMap::new(),
             return_type: None,
             saw_return: false,
         }
@@ -497,6 +530,8 @@ impl TypeEnvironment {
         let functions = self.functions.clone();
         let struct_types = self.struct_types.clone();
         let enum_types = self.enum_types.clone();
+        let struct_layouts = self.struct_layouts.clone();
+        let enum_variants = self.enum_variants.clone();
         let return_type = self.return_type.clone();
         let saw_return = self.saw_return;
         Self {
@@ -504,6 +539,8 @@ impl TypeEnvironment {
             functions,
             struct_types,
             enum_types,
+            struct_layouts,
+            enum_variants,
             return_type,
             saw_return,
         }
@@ -1110,42 +1147,17 @@ fn infer_expr(
                 }
             }
         ExprKind::SizeOf(ty) => {
-            let size = match size_of_type(&ty) {
-                Some(bytes) => bytes,
-                None => match ty {
-                    Type::Struct(name) => {
-                    return Err(TypeError {
-                        message: format!("sizeof ne supporte pas encore le type struct '{name}'"),
-                        line: expr.line,
-                        column: expr.column,
-                        suggestion: Some(
-                            "Utilisez la taille d'un type scalaire ou d'un pointeur.".to_string(),
-                        ),
-                    });
+            let size = size_of_type(&ty, &env.struct_layouts, &env.enum_variants).ok_or_else(|| {
+                TypeError {
+                    message: format!("sizeof ne sait pas évaluer la taille de '{ty}'"),
+                    line: expr.line,
+                    column: expr.column,
+                    suggestion: Some(
+                        "Utilisez un type dont la taille est connue: bool, entiers, flottants, pointeurs, tableaux ou types déclarés."
+                            .to_string(),
+                    ),
                 }
-                Type::Enum(name) => {
-                    return Err(TypeError {
-                        message: format!("sizeof ne supporte pas encore le type enum '{name}'"),
-                        line: expr.line,
-                        column: expr.column,
-                        suggestion: Some(
-                            "Utilisez la taille d'un type scalaire ou d'un pointeur.".to_string(),
-                        ),
-                    });
-                    }
-                    unsupported => {
-                        return Err(TypeError {
-                            message: format!("sizeof ne sait pas évaluer la taille de '{unsupported}'"),
-                            line: expr.line,
-                            column: expr.column,
-                            suggestion: Some(
-                                "Utilisez un type supporté par sizeof pour l'instant."
-                                    .to_string(),
-                            ),
-                        });
-                    }
-                },
-            };
+            })?;
             let _bytes = size;
             inferred.insert(expr.id, Type::I64);
             ExprCompletion::Value(Type::I64)
@@ -1309,7 +1321,11 @@ fn type_mismatch_detail(expected: &Type, found: &Type) -> Option<String> {
     }
 }
 
-fn size_of_type(ty: &Type) -> Option<i64> {
+fn size_of_type(
+    ty: &Type,
+    struct_layouts: &HashMap<String, Vec<Type>>,
+    enum_variants: &HashMap<String, usize>,
+) -> Option<i64> {
     match ty {
         Type::Void => Some(0),
         Type::Bool => Some(1),
@@ -1317,10 +1333,27 @@ fn size_of_type(ty: &Type) -> Option<i64> {
         Type::I16 | Type::U16 => Some(2),
         Type::I32 | Type::U32 | Type::F32 => Some(4),
         Type::I64 | Type::U64 | Type::F64 => Some(8),
-        Type::Struct(_) | Type::Enum(_) => None,
         Type::Pointer(_) => Some(8),
+        Type::Struct(name) => struct_layouts.get(name).and_then(|fields| {
+            fields.iter().try_fold(0i64, |acc, field_ty| {
+                size_of_type(field_ty, struct_layouts, enum_variants).and_then(|field_size| {
+                    acc.checked_add(field_size)
+                })
+            })
+        }),
+        Type::Enum(name) => enum_variants.get(name).map(|variants_count| {
+            if *variants_count <= 2 {
+                1
+            } else if *variants_count <= 255 {
+                4
+            } else {
+                8
+            }
+        }),
         Type::Array(inner, len) => {
-            size_of_type(inner).and_then(|inner_size| inner_size.checked_mul(*len as i64))
+            size_of_type(inner, struct_layouts, enum_variants).and_then(|inner_size| {
+                inner_size.checked_mul(*len as i64)
+            })
         }
     }
 }

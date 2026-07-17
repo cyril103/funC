@@ -231,6 +231,7 @@ impl FunctionMemoryState {
 
 #[cfg(test)]
 mod tests {
+    use crate::ast::Program;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
 

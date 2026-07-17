@@ -8,7 +8,7 @@ use inkwell::builder::{Builder, BuilderError};
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::targets::{InitializationConfig, Target, TargetMachine};
-use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::types::{BasicType, BasicTypeEnum, IntType, StructType};
 use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum};
 
 type ValueWithType = (Option<BasicValueEnum<'static>>, Type);
@@ -16,6 +16,9 @@ type ValueWithType = (Option<BasicValueEnum<'static>>, Type);
 pub struct Generator {
     types: HashMap<usize, Type>,
     current_scope: Vec<HashMap<String, BasicValueEnum<'static>>>,
+    struct_layouts: HashMap<String, Vec<Type>>,
+    struct_types: HashMap<String, StructType<'static>>,
+    enum_variants: HashMap<String, usize>,
     context: *const Context,
     module: *const Module<'static>,
     builder: *const Builder<'static>,
@@ -23,7 +26,7 @@ pub struct Generator {
 }
 
 impl Generator {
-    pub fn new(types: &HashMap<usize, Type>) -> Generator {
+    pub fn new(program: &Program, types: &HashMap<usize, Type>) -> Generator {
         let context = Box::new(Context::create());
         let context: &'static Context = Box::leak(context);
         let module = Box::new(context.create_module("funC-module"));
@@ -31,13 +34,67 @@ impl Generator {
         let builder = Box::new(context.create_builder());
         let builder: &'static Builder<'static> = Box::leak(builder);
 
-        Self {
+        let mut generator = Self {
             types: types.clone(),
             current_scope: vec![HashMap::new()],
+            struct_layouts: HashMap::new(),
+            struct_types: HashMap::new(),
+            enum_variants: HashMap::new(),
             context: context as *const _,
             module: module as *const _,
             builder: builder as *const _,
             next_label: 0,
+        };
+        generator.load_program_types(program);
+        generator
+    }
+
+    fn enum_int_type_by_variants(&self, variant_count: usize) -> IntType<'static> {
+        let context = self.context_ref();
+        if variant_count <= 2 {
+            context.i8_type()
+        } else if variant_count <= 255 {
+            context.i32_type()
+        } else {
+            context.i64_type()
+        }
+    }
+
+    fn load_program_types(&mut self, program: &Program) {
+        for decl in &program.structs {
+            self.struct_layouts.insert(
+                decl.name.clone(),
+                decl.fields.iter().map(|field| field.ty.clone()).collect(),
+            );
+            let opaque_struct = self.context_ref().opaque_struct_type(&decl.name);
+            self.struct_types.insert(
+                decl.name.clone(),
+                unsafe {
+                    std::mem::transmute::<StructType<'_>, StructType<'static>>(opaque_struct)
+                },
+            );
+        }
+
+        for decl in &program.enums {
+            self.enum_variants
+                .insert(decl.name.clone(), decl.variants.len());
+        }
+
+        for decl in &program.structs {
+            let field_tys = decl
+                .fields
+                .iter()
+                .map(|field| self.llvm_type(&field.ty))
+                .collect::<Vec<_>>();
+            if let Some(struct_type) = self.struct_types.get(&decl.name) {
+                let field_tys = field_tys
+                    .into_iter()
+                    .map(|field| {
+                        field.unwrap_or_else(|| self.i8_ptr_type().as_basic_type_enum())
+                    })
+                    .collect::<Vec<_>>();
+                struct_type.set_body(&field_tys, false);
+            }
         }
     }
 
@@ -96,8 +153,16 @@ impl Generator {
                 .unwrap_or(self.i8_ptr_type().as_basic_type_enum())
                 .array_type((*len).try_into().unwrap_or(0))
                 .as_basic_type_enum(),
-            Type::Struct(_) => self.i8_ptr_type().as_basic_type_enum(),
-            Type::Enum(_) => self.i8_ptr_type().as_basic_type_enum(),
+            Type::Struct(name) => self
+                .struct_types
+                .get(name)
+                .map(|struct_ty| struct_ty.as_basic_type_enum())
+                .unwrap_or_else(|| self.i8_ptr_type().as_basic_type_enum()),
+            Type::Enum(name) => self
+                .enum_variants
+                .get(name)
+                .map(|variants_count| self.enum_int_type_by_variants(*variants_count).as_basic_type_enum())
+                .unwrap_or_else(|| self.i8_ptr_type().as_basic_type_enum()),
             Type::Pointer(_) => self.i8_ptr_type().as_basic_type_enum(),
         };
         Some(unsafe {
@@ -814,7 +879,28 @@ impl Generator {
             Type::I16 | Type::U16 => 2,
             Type::I32 | Type::U32 | Type::F32 => 4,
             Type::I64 | Type::U64 | Type::F64 => 8,
-            Type::Struct(_) | Type::Enum(_) => 8,
+            Type::Struct(name) => self
+                .struct_layouts
+                .get(name)
+                .and_then(|fields| {
+                    fields.iter().try_fold(0i64, |acc, field_ty| {
+                        self.size_of_type(field_ty).and_then(|field_size| acc.checked_add(field_size))
+                    })
+                })
+                .unwrap_or(0),
+            Type::Enum(name) => self
+                .enum_variants
+                .get(name)
+                .map(|variants_count| {
+                    if *variants_count <= 2 {
+                        1
+                    } else if *variants_count <= 255 {
+                        4
+                    } else {
+                        8
+                    }
+                })
+                .unwrap_or(0),
             Type::Pointer(_) => 8,
             Type::Array(inner, len) => (*len as i64) * self.size_of_type(inner),
         }
@@ -834,9 +920,14 @@ impl Generator {
             Type::U64 => Some(context.i64_type().const_zero().as_basic_value_enum()),
             Type::F32 => Some(context.f32_type().const_zero().as_basic_value_enum()),
             Type::F64 => Some(context.f64_type().const_zero().as_basic_value_enum()),
-            Type::Struct(_) | Type::Enum(_) => Some(
-                self.i8_ptr_type().const_zero().as_basic_value_enum(),
-            ),
+            Type::Struct(name) => self
+                .struct_types
+                .get(name)
+                .map(|struct_ty| struct_ty.const_zero().as_basic_value_enum()),
+            Type::Enum(name) => self
+                .enum_variants
+                .get(name)
+                .map(|variants_count| self.enum_int_type_by_variants(*variants_count).const_zero().as_basic_value_enum()),
             Type::Pointer(_) => Some(self.i8_ptr_type().const_zero().as_basic_value_enum()),
             Type::Array(inner, len) => {
                 let inner_ty = self.llvm_type(inner)?;
@@ -852,7 +943,7 @@ impl Generator {
 }
 
 pub fn generate(program: &Program, types: &HashMap<usize, Type>) -> String {
-    Generator::new(types).generate(program)
+    Generator::new(program, types).generate(program)
 }
 
 fn declare_runtime(context: *const Context, module: *const Module<'static>) {

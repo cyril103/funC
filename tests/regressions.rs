@@ -78,6 +78,69 @@ fn codegen_regression_emits_llvm_ir() {
 }
 
 #[test]
+fn codegen_regression_emits_struct_enum_array_types() {
+    let input = temp_source_file(
+        "codegen_types",
+        r#"
+struct Point {
+    x: i64;
+    y: i64;
+}
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+fn take_point(value: Point) -> Point {
+    return value;
+}
+
+fn take_color(value: Color) -> Color {
+    return value;
+}
+
+fn take_points(values: [Point; 2]) -> [Point; 2] {
+    return values;
+}
+
+fn main() -> i64 {
+    return 0;
+}
+"#,
+    );
+
+    let mut output = PathBuf::from(std::env::temp_dir());
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time")
+        .as_nanos();
+    output.push(format!(
+        "func_regression_codegen_types_{}_{}.ll",
+        std::process::id(),
+        nanos
+    ));
+
+    let status = Command::new(env!("CARGO_BIN_EXE_funC"))
+        .args([
+            "compile",
+            "--emit-ir",
+            "--out",
+            output.to_str().expect("utf8"),
+            input.to_str().expect("utf8"),
+        ])
+        .status()
+        .expect("run funC");
+
+    assert!(status.success());
+    let llvm = fs::read_to_string(&output).expect("read ir");
+    assert!(llvm.contains("%Point"));
+    assert!(llvm.contains("[2 x %Point]"));
+    assert!(llvm.contains("take_color"));
+    assert!(output.exists());
+}
+
+#[test]
 fn import_regression_compiles_multiple_files() {
     let mut input = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     input.push("examples/modules/main.fc");
