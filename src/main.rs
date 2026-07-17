@@ -29,6 +29,8 @@ enum Commands {
     Fmt(FmtArgs),
     /// Affiche les cibles supportées et les alias reconnus
     ListTargets,
+    /// Analyse un fichier (parse + typecheck + diagnostics mémoire optionnels)
+    Validate(ValidateArgs),
 }
 
 #[derive(Debug, Args)]
@@ -107,6 +109,16 @@ struct FmtArgs {
     check: bool,
 }
 
+#[derive(Debug, Args)]
+struct ValidateArgs {
+    /// Fichier source FunC à valider
+    input: String,
+
+    /// Active les avertissements mémoire (heuristique) pendant la validation
+    #[arg(long)]
+    warn_memory: bool,
+}
+
 #[derive(Debug)]
 struct TargetInfo {
     triple: String,
@@ -140,6 +152,7 @@ fn main() {
     match cli.command {
         Commands::Compile(args) => run_compile(args),
         Commands::Fmt(args) => run_fmt(args),
+        Commands::Validate(args) => run_validate(args),
         Commands::ListTargets => list_targets(),
     }
 }
@@ -191,6 +204,58 @@ fn run_fmt(args: FmtArgs) {
         eprintln!("Impossible d'écrire le fichier formaté {}: {err}", output);
         process::exit(1);
     }
+}
+
+fn run_validate(args: ValidateArgs) {
+    let source = match fs::read_to_string(&args.input) {
+        Ok(s) => s,
+        Err(err) => {
+            eprintln!("Impossible de lire le fichier {}: {err}", args.input);
+            process::exit(1);
+        }
+    };
+
+    let mut parsed = match load_program_from_entry(&args.input) {
+        Ok(program) => program,
+        Err(err) => {
+            eprintln!("{err}");
+            process::exit(1);
+        }
+    };
+    constfold::fold_program(&mut parsed);
+
+    if let Err(err) = typecheck::check(&parsed, &source) {
+        print_diagnostic(
+            &source,
+            "Erreur typage",
+            err.line,
+            err.column,
+            &err.message,
+            err.suggestion.as_deref(),
+        );
+        process::exit(1);
+    }
+
+    if args.warn_memory {
+        let warnings = memorycheck::analyze(&parsed);
+        if warnings.is_empty() {
+            println!("Avertissements mémoire: aucun");
+        } else {
+            println!("Avertissements mémoire (heuristique):");
+            for warning in warnings {
+                print_diagnostic(
+                    &source,
+                    "Avertissement mémoire",
+                    warning.line,
+                    warning.column,
+                    &warning.message,
+                    None,
+                );
+            }
+        }
+    }
+
+    println!("Validation OK: {}", args.input);
 }
 
 fn list_targets() {

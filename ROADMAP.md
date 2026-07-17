@@ -15,7 +15,7 @@
 ### Phase 1 — UX compilateur (2 semaines)
 - [ ] Harmoniser les erreurs/diagnostics avec codes (catégories): syntaxe, sémantique, backend.
 - [ ] Afficher des spans multi-lignes quand c’est utile (`if`, `for`, `import`).
-- [ ] Ajouter une commande `funC validate` qui combine parse + typecheck + diagnostics mémoire.
+- [x] Ajouter une commande `funC validate` qui combine parse + typecheck + diagnostics mémoire.
 - [ ] Documenter le comportement `import` (résolution des chemins, erreurs).
 
 ### Phase 2 — Productivité langage (2–3 semaines)

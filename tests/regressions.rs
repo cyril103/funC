@@ -104,6 +104,34 @@ fn integration_regression_windows_build_executable() {
 }
 
 #[test]
+fn validate_command_accepts_valid_project() {
+    let input = temp_source_file(
+        "validate_ok",
+        "struct Point { x: i64; y: i64; } fn main() -> i64 { 0 }\n",
+    );
+    let status = Command::new(env!("CARGO_BIN_EXE_funC"))
+        .args(["validate", input.to_str().expect("utf8")])
+        .status()
+        .expect("run funC");
+
+    assert!(status.success());
+}
+
+#[test]
+fn validate_command_rejects_invalid_project() {
+    let input = temp_source_file(
+        "validate_nok",
+        "fn main() -> i64 { let x: bool = 1; x }\n",
+    );
+    let status = Command::new(env!("CARGO_BIN_EXE_funC"))
+        .args(["validate", input.to_str().expect("utf8")])
+        .status()
+        .expect("run funC");
+
+    assert!(!status.success());
+}
+
+#[test]
 fn typecheck_regression_rejects_type_mismatch() {
     let input = temp_source_file(
         "typecheck",
