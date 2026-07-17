@@ -531,6 +531,15 @@ impl Parser {
             }
             Some(TokenKind::Identifier(_)) => {
                 let name = self.consume_identifier("nom")?;
+                let name = if self.check(TokenKind::Colon) {
+                    self.bump();
+                    self.expect(TokenKind::Colon)?;
+                    let member = self.consume_identifier("nom du membre du namespace")?;
+                    format!("{name}::{member}")
+                } else {
+                    name
+                };
+
                 if self.check(TokenKind::LParen) {
                     self.bump();
                     let mut args = Vec::new();
@@ -976,6 +985,28 @@ mod tests {
         assert_eq!(program.imports, vec!["math".to_string()]);
         assert_eq!(program.functions.len(), 1);
         assert_eq!(program.functions[0].name, "main");
+    }
+
+    #[test]
+    fn parse_std_namespace_call() {
+        let source = "fn main() -> i64 { let p = func::alloc(8); return 0; }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let first = &program.functions[0].body.expressions[0].kind;
+        match first {
+            ExprKind::Let { value, .. } => {
+                let call = &value.kind;
+                match call {
+                    ExprKind::Call { name, args } => {
+                        assert_eq!(name, "func::alloc");
+                        assert_eq!(args.len(), 1);
+                    }
+                    _ => panic!("assignation attendue comme appel func::alloc"),
+                }
+            }
+            _ => panic!("expression première attendue comme let"),
+        }
     }
 
     #[test]

@@ -26,7 +26,21 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
         },
     );
     env.functions.insert(
+        "func::realloc".to_string(),
+        FunctionSignature {
+            params: vec![Type::Pointer(Box::new(Type::I8)), Type::I64],
+            return_type: Type::Pointer(Box::new(Type::I8)),
+        },
+    );
+    env.functions.insert(
         "assert".to_string(),
+        FunctionSignature {
+            params: vec![Type::Bool],
+            return_type: Type::Void,
+        },
+    );
+    env.functions.insert(
+        "func::assert".to_string(),
         FunctionSignature {
             params: vec![Type::Bool],
             return_type: Type::Void,
@@ -40,7 +54,32 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
         },
     );
     env.functions.insert(
+        "func::panic".to_string(),
+        FunctionSignature {
+            params: vec![],
+            return_type: Type::Void,
+        },
+    );
+    env.functions.insert(
+        "func::free".to_string(),
+        FunctionSignature {
+            params: vec![Type::Pointer(Box::new(Type::I8))],
+            return_type: Type::Void,
+        },
+    );
+    env.functions.insert(
         "memcpy".to_string(),
+        FunctionSignature {
+            params: vec![
+                Type::Pointer(Box::new(Type::I8)),
+                Type::Pointer(Box::new(Type::I8)),
+                Type::I64,
+            ],
+            return_type: Type::Pointer(Box::new(Type::I8)),
+        },
+    );
+    env.functions.insert(
+        "func::memcpy".to_string(),
         FunctionSignature {
             params: vec![
                 Type::Pointer(Box::new(Type::I8)),
@@ -58,6 +97,24 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
                 Type::I8,
                 Type::I64,
             ],
+            return_type: Type::Pointer(Box::new(Type::I8)),
+        },
+    );
+    env.functions.insert(
+        "func::memset".to_string(),
+        FunctionSignature {
+            params: vec![
+                Type::Pointer(Box::new(Type::I8)),
+                Type::I8,
+                Type::I64,
+            ],
+            return_type: Type::Pointer(Box::new(Type::I8)),
+        },
+    );
+    env.functions.insert(
+        "func::alloc".to_string(),
+        FunctionSignature {
+            params: vec![Type::I64],
             return_type: Type::Pointer(Box::new(Type::I8)),
         },
     );
@@ -500,6 +557,14 @@ mod tests {
         let program = parse_program("fn main() -> void { assert(42); }");
         let err = check(&program, "").unwrap_err();
         assert!(err.message.contains("arg 0 de 'assert' attend bool"));
+    }
+
+    #[test]
+    fn std_namespace_memory_and_runtime_helpers_are_available() {
+        let program = parse_program(
+            "fn main() -> void { let p = func::alloc(16); let q = func::realloc(p, 32); func::memcpy(q, p, 16); func::memset(q, 0, 8); func::free(q); func::assert(true); func::panic(); }",
+        );
+        assert!(check(&program, "").is_ok());
     }
 }
 

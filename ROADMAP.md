@@ -22,7 +22,7 @@
 - [x] Élargir le constant folding (comparaisons booléennes et propagation de constantes simples).
 - [x] Optimisations locales sûres (élimination de code mort local / branchements inutiles).
 - [x] Ajouter des helpers de style (`assert`, `panic` minimal) au niveau bibliothèque standard.
-- [ ] Définir une mini-std (`func::`) pour les utilitaires mémoire et I/O minimal.
+- [x] Définir une mini-std (`func::`) pour les utilitaires mémoire et I/O minimal.
 
 ### Phase 3 — Backend et runtime (2–3 semaines)
 - [ ] Vérifier les pipelines cross-cible sur `llc/clang` (obj/exe).
@@ -38,4 +38,5 @@
 
 ## Indicateur d’avancement
 - Priorité: livrer chaque phase par lot, avec vérification `cargo build` + jeux de tests pertinents par phase.
+- Statut actuel: Phase 2 terminée, la mini-std `func::` est opérationnelle end-to-end (`alloc`, `free`, `realloc`, `memcpy`, `memset`, `assert`, `panic`).
 - Objectif cible: stabiliser avant d’ajouter de nouvelles fonctionnalités de syntaxe.

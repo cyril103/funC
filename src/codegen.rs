@@ -392,16 +392,45 @@ impl Generator {
                 Type::Bool,
             ),
             ExprKind::Call { name, args } => {
-                if name == "assert" {
+                let resolved = match name.as_str() {
+                    "func::assert" => "assert",
+                    "func::panic" => "panic",
+                    "func::alloc" => "alloc",
+                    "func::free" => "free",
+                    "func::realloc" => "realloc",
+                    "func::memcpy" => "memcpy",
+                    "func::memset" => "memset",
+                    _ => name.as_str(),
+                };
+
+                if resolved == "assert" {
                     return self.emit_assert(args.first().expect("assert has no argument"));
                 }
-                if name == "panic" {
+                if resolved == "panic" {
                     return self.emit_panic();
+                }
+
+                if resolved == "alloc" {
+                    let (size, _) = self.emit_expr(args.first().expect("alloc has no argument"));
+                    let malloc = self
+                        .module_ref()
+                        .get_function("malloc")
+                        .expect("malloc manquant");
+                    let size = size.expect("sizeof alloc invalide");
+                    let ptr = self
+                        .expect(
+                            self.builder_ref()
+                                .build_call(malloc, &[size.into()], "malloc_call"),
+                            "malloc",
+                        )
+                        .try_as_basic_value()
+                        .expect_basic("malloc returned no value");
+                    return (Some(ptr), Type::Pointer(Box::new(Type::I8)));
                 }
 
                 let function = self
                     .module_ref()
-                    .get_function(name)
+                    .get_function(resolved)
                     .unwrap_or_else(|| panic!("function '{}' non déclarée", name));
 
                 let args = args
