@@ -175,6 +175,12 @@ impl Parser {
     fn parse_let(&mut self) -> Result<Expr, ParseError> {
         let (start_line, start_column) = self.current_position();
         self.expect(TokenKind::Let)?;
+        let mutable = if self.check(TokenKind::Mut) {
+            self.bump();
+            true
+        } else {
+            false
+        };
         let name = self.consume_identifier("nom de variable")?;
         let ty = if self.check(TokenKind::Colon) {
             self.bump();
@@ -188,6 +194,7 @@ impl Parser {
             name,
             ty,
             value: Box::new(value),
+            mutable,
         }))
     }
 
@@ -205,6 +212,20 @@ impl Parser {
     fn parse_expression(&mut self, min_prec: u8) -> Result<Expr, ParseError> {
         let (start_line, start_column) = self.current_position();
         let mut lhs = self.parse_unary_expression()?;
+        if let ExprKind::Identifier(name) = &lhs.kind {
+            if self.check(TokenKind::Eq) {
+                self.bump();
+                let rhs = self.parse_expression(0)?;
+                lhs = self.expr_at(
+                    start_line,
+                    start_column,
+                    ExprKind::Assign {
+                        name: name.clone(),
+                        value: Box::new(rhs),
+                    },
+                );
+            }
+        }
         while let Some((op, prec, left_assoc)) = Self::binary_meta(self.current_kind()) {
             if prec < min_prec {
                 break;
@@ -785,6 +806,27 @@ mod tests {
                 assert!(value.is_some());
             }
             _ => panic!("expression racine pas un return"),
+        }
+    }
+
+    #[test]
+    fn parse_mutable_let_and_assignment() {
+        let source = "fn main() -> i64 { let mut x: i64 = 1; x = 2; x; }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let decl = &program.functions[0].body.expressions[0];
+        match &decl.kind {
+            ExprKind::Let { name, mutable, .. } => {
+                assert_eq!(name, "x");
+                assert!(*mutable);
+            }
+            _ => panic!("déclaration attendue comme let mut"),
+        }
+
+        match &program.functions[0].body.expressions[1].kind {
+            ExprKind::Assign { name, .. } => assert_eq!(name, "x"),
+            _ => panic!("assignment attendue"),
         }
     }
 }

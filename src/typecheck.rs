@@ -42,7 +42,10 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
         let mut fn_env = env.clone_empty_scope();
         for param in &function.params {
             fn_env.locals.push(HashMap::new());
-            fn_env.locals.last_mut().unwrap().insert(param.name.clone(), param.ty.clone());
+            fn_env.locals.last_mut().unwrap().insert(
+                param.name.clone(),
+                (param.ty.clone(), false),
+            );
         }
         fn_env.return_type = Some(function.return_type.clone());
         let body_ty = infer_block(&function.body, &mut fn_env, &env.functions, &mut inferred)?;
@@ -66,7 +69,7 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
 
 #[derive(Clone)]
 struct TypeEnvironment {
-    locals: Vec<HashMap<String, Type>>,
+    locals: Vec<HashMap<String, (Type, bool)>>,
     functions: HashMap<String, FunctionSignature>,
     return_type: Option<Type>,
     saw_return: bool,
@@ -102,16 +105,25 @@ impl TypeEnvironment {
         self.locals.pop();
     }
 
-    fn define(&mut self, name: String, ty: Type) {
+    fn define(&mut self, name: String, ty: Type, mutable: bool) {
         if let Some(scope) = self.locals.last_mut() {
-            scope.insert(name, ty);
+            scope.insert(name, (ty, mutable));
         }
     }
 
     fn resolve(&self, name: &str) -> Option<Type> {
         for scope in self.locals.iter().rev() {
-            if let Some(ty) = scope.get(name) {
+            if let Some((ty, _)) = scope.get(name) {
                 return Some(ty.clone());
+            }
+        }
+        None
+    }
+
+    fn resolve_symbol(&self, name: &str) -> Option<(Type, bool)> {
+        for scope in self.locals.iter().rev() {
+            if let Some(info) = scope.get(name) {
+                return Some(info.clone());
             }
         }
         None
@@ -140,7 +152,12 @@ fn infer_expr(
     inferred: &mut HashMap<usize, Type>,
 ) -> Result<Type, TypeError> {
     let ty = match &expr.kind {
-        ExprKind::Let { name, ty, value } => {
+        ExprKind::Let {
+            name,
+            ty,
+            value,
+            mutable,
+        } => {
             let init_ty = infer_expr(value, env, functions, inferred)?;
             if let Some(ann) = ty {
                 if &init_ty != ann {
@@ -156,8 +173,43 @@ fn infer_expr(
                 }
             }
             let final_ty = ty.clone().unwrap_or(init_ty);
-            env.define(name.clone(), final_ty.clone());
+            env.define(name.clone(), final_ty.clone(), *mutable);
             final_ty
+        }
+        ExprKind::Assign { name, value } => {
+            let rhs_ty = infer_expr(value, env, functions, inferred)?;
+            let (decl_ty, mutable) = env.resolve_symbol(name).ok_or_else(|| TypeError {
+                message: format!("identifiant '{}' inconnu", name),
+                line: expr.line,
+                column: expr.column,
+                suggestion: Some("Déclarez d'abord la variable avec let avant de l'assigner.".to_string()),
+            })?;
+            if !mutable {
+                return Err(TypeError {
+                    message: format!("la variable '{}' n'est pas mutable", name),
+                    line: expr.line,
+                    column: expr.column,
+                    suggestion: Some(format!(
+                        "déclarez '{}' avec 'let mut {}' pour autoriser une réassignation.",
+                        name, name
+                    )),
+                });
+            }
+            if rhs_ty != decl_ty {
+                return Err(TypeError {
+                    message: format!(
+                        "affectation incompatible: '{}' attendu '{}', trouvé '{}'",
+                        name, decl_ty, rhs_ty
+                    ),
+                    line: expr.line,
+                    column: expr.column,
+                    suggestion: Some(format!(
+                        "Retournez/affectez une valeur de type '{}' pour '{}'.",
+                        decl_ty, name
+                    )),
+                });
+            }
+            decl_ty
         }
         ExprKind::Store(value, ptr) => {
             let value_ty = infer_expr(value, env, functions, inferred)?;

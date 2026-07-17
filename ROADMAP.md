@@ -34,7 +34,7 @@
 2. Retour explicite
    - ✅ Ajouter `return` comme mot-clé utilisable dans les blocs
 3. Mutabilité
-   - Introduire `let mut`
+   - ✅ Introduire `let mut`
 4. Fonctions
    - Améliorer la robustesse des appels
    - Vérification stricte du type de retour et de l'arité

@@ -38,6 +38,11 @@ pub enum ExprKind {
         name: String,
         ty: Option<Type>,
         value: Box<Expr>,
+        mutable: bool,
+    },
+    Assign {
+        name: String,
+        value: Box<Expr>,
     },
     Store(Box<Expr>, Box<Expr>),
     For {
@@ -179,12 +184,27 @@ impl Expr {
     pub fn format(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         let pad = "  ".repeat(indent);
         match &self.kind {
-            ExprKind::Let { name, ty, value } => {
-                if let Some(ty) = ty {
+            ExprKind::Let {
+                name,
+                mutable,
+                ty,
+                value,
+            } => {
+                if *mutable {
+                    if let Some(ty) = ty {
+                        write!(f, "{}let mut {}: {} = ", pad, name, ty)?;
+                    } else {
+                        write!(f, "{}let mut {} = ", pad, name)?;
+                    }
+                } else if let Some(ty) = ty {
                     write!(f, "{}let {}: {} = ", pad, name, ty)?;
                 } else {
                     write!(f, "{}let {} = ", pad, name)?;
                 }
+                value.format(f, 0)?;
+            }
+            ExprKind::Assign { name, value } => {
+                write!(f, "{}{} = ", pad, name)?;
                 value.format(f, 0)?;
             }
             ExprKind::Store(value, ptr) => {

@@ -11,6 +11,7 @@ pub struct Token {
 pub enum TokenKind {
     Fn,
     Let,
+    Mut,
     If,
     For,
     While,

@@ -211,6 +211,7 @@ impl Lexer {
         match txt.as_str() {
             "fn" => Ok(TokenKind::Fn),
             "let" => Ok(TokenKind::Let),
+            "mut" => Ok(TokenKind::Mut),
             "if" => Ok(TokenKind::If),
             "for" => Ok(TokenKind::For),
             "while" => Ok(TokenKind::While),
@@ -352,6 +353,14 @@ mod tests_legacy {
         assert_eq!(tokens[0].kind, TokenKind::Fn);
         assert_eq!(tokens[1].kind, TokenKind::Identifier("main".to_string()));
         assert_eq!(tokens[tokens.len() - 2].kind, TokenKind::RBrace);
+    }
+
+    #[test]
+    fn lex_mut_keyword() {
+        let tokens = Lexer::new("let mut x = 1").tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Let);
+        assert_eq!(tokens[1].kind, TokenKind::Mut);
+        assert_eq!(tokens[2].kind, TokenKind::Identifier("x".to_string()));
     }
 }
 

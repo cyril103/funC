@@ -183,6 +183,21 @@ impl Generator {
                 }
                 emitted
             }
+            ExprKind::Assign { name, value } => {
+                let emitted = self.emit_expr(value);
+                let value = emitted
+                    .0
+                    .expect("assign without value");
+                let scope = self
+                    .current_scope
+                    .last_mut()
+                    .unwrap();
+                if !scope.contains_key(name) {
+                    panic!("assignment to undeclared variable '{}'", name);
+                }
+                scope.insert(name.clone(), value);
+                (Some(value), ty)
+            }
             ExprKind::Store(value, ptr) => {
                 let rhs = self.emit_expr(value);
                 let ptr = self.emit_expr(ptr);
