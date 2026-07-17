@@ -67,6 +67,39 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
     Ok(inferred)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+
+    fn parse_program(source: &str) -> Program {
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        Parser::new(tokens).parse_program().unwrap()
+    }
+
+    #[test]
+    fn function_call_arity_mismatch() {
+        let program = parse_program("fn id(x: i64) -> i64 { x } fn main() -> i64 { id(1, 2); }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("attend 1 arguments"));
+    }
+
+    #[test]
+    fn function_call_type_mismatch() {
+        let program = parse_program("fn id(x: i64) -> i64 { x } fn main() -> i64 { id(true); }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("arg 0"));
+    }
+
+    #[test]
+    fn function_call_unknown_function() {
+        let program = parse_program("fn main() -> i64 { foo(1); }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("fonction 'foo' inconnue"));
+    }
+}
+
 #[derive(Clone)]
 struct TypeEnvironment {
     locals: Vec<HashMap<String, (Type, bool)>>,
