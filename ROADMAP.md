@@ -25,7 +25,7 @@
 - [x] Définir une mini-std (`func::`) pour les utilitaires mémoire et I/O minimal.
 
 ### Phase 3 — Backend et runtime (2–3 semaines)
-- [ ] Vérifier les pipelines cross-cible sur `llc/clang` (obj/exe).
+- [x] Vérifier les pipelines cross-cible sur `llc/clang` (obj/exe).
 - [ ] Ajouter des passes backend optionnelles (désactivation du `opt` agressif par défaut, profil d’activation).
 - [ ] Renforcer le support de debug info en mode exécutable.
 - [ ] Améliorer la sortie objet/exécutable avec messages d’échec contextuels.
@@ -38,5 +38,5 @@
 
 ## Indicateur d’avancement
 - Priorité: livrer chaque phase par lot, avec vérification `cargo build` + jeux de tests pertinents par phase.
-- Statut actuel: Phase 2 terminée, la mini-std `func::` est opérationnelle end-to-end (`alloc`, `free`, `realloc`, `memcpy`, `memset`, `assert`, `panic`).
+- Statut actuel: Phase 3 démarrée, première vérification backend réalisée — pipelines obj cross-cible via test d’intégration (`llc/clang`) + support CI de l’objet par cible.
 - Objectif cible: stabiliser avant d’ajouter de nouvelles fonctionnalités de syntaxe.

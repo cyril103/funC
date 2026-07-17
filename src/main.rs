@@ -119,7 +119,7 @@ struct ValidateArgs {
     warn_memory: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum DiagnosticCategory {
     Syntax,
     Semantic,
@@ -931,7 +931,7 @@ fn locate_control_span(
     column: usize,
     keyword: &str,
 ) -> Option<DiagnosticSpan> {
-    let keyword_offset = find_keyword_column(line_text, keyword).or(Some(column));
+    let keyword_offset = find_keyword_column(line_text, keyword).unwrap_or(column);
     let mut depth = 0isize;
     let mut end_line = line;
     let mut end_column = column;
@@ -1023,7 +1023,8 @@ fn locate_import_span(
 
 fn contains_token(line: &str, token: &str) -> bool {
     if let Some(idx) = line.find(token) {
-        is_token_boundary(line, line[..idx].chars().last()) && is_token_boundary(line, line[idx + token.len()..].chars().next())
+        is_token_boundary(line[..idx].chars().last())
+            && is_token_boundary(line[idx + token.len()..].chars().next())
     } else {
         false
     }

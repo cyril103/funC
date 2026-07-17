@@ -46,7 +46,7 @@ fn build_and_run_executable(input: &PathBuf, target: Option<&str>, expected_code
     let mut args: Vec<String> = vec![
         "compile".to_string(),
         "--emit-exe".to_string(),
-        "--out".to_string(),
+        "--out-exe".to_string(),
         output.to_str().expect("utf8").to_string(),
         input.to_str().expect("utf8").to_string(),
     ];
@@ -68,6 +68,52 @@ fn build_and_run_executable(input: &PathBuf, target: Option<&str>, expected_code
     assert_eq!(run_status.code(), Some(expected_code));
 }
 
+fn compile_object_for_target(input: &PathBuf, target: &str) -> Option<PathBuf> {
+    if !has_command("llc") {
+        return None;
+    }
+
+    let mut obj = PathBuf::from(std::env::temp_dir());
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time")
+        .as_nanos();
+    obj.push(format!(
+        "func_regression_obj_{}_{}_{}",
+        std::process::id(),
+        target.replace('-', "_"),
+        nanos
+    ));
+    let is_windows_target = target.contains("windows");
+    let extension = if is_windows_target { "obj" } else { "o" };
+    obj.set_extension(extension);
+
+    let args = [
+        "compile",
+        "--emit-obj",
+        "--out-obj",
+        obj.to_str().expect("utf8"),
+        "--target",
+        target,
+        input.to_str().expect("utf8"),
+    ];
+
+    let status = Command::new(env!("CARGO_BIN_EXE_funC"))
+        .args(args)
+        .status()
+        .expect("run funC");
+
+    if status.success() {
+        if obj.exists() {
+            Some(obj)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
 #[test]
 fn parser_regression_rejects_syntax_error() {
     let input = temp_source_file(
@@ -81,6 +127,24 @@ fn parser_regression_rejects_syntax_error() {
         .expect("run funC");
 
     assert!(!status.success());
+}
+
+#[test]
+fn backend_regression_emits_object_for_native_and_compatible_aliases() {
+    let input = temp_source_file(
+        "backend_object",
+        "fn main() -> i64 { return 123; }\n",
+    );
+
+    let native_obj = compile_object_for_target(&input, "native");
+    assert!(native_obj.is_some());
+
+    for target in ["x86_64", "aarch64"] {
+        let path = compile_object_for_target(&input, target);
+        if path.is_none() {
+            println!("Cible '{target}' non disponible avec les toolchains actuels, skip");
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]

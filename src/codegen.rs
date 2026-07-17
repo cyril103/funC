@@ -968,9 +968,9 @@ impl Generator {
             Type::Struct(name) => self
                 .struct_layouts
                 .get(name)
-                .and_then(|fields| {
-                    fields.iter().try_fold(0i64, |acc, field_ty| {
-                        self.size_of_type(field_ty).and_then(|field_size| acc.checked_add(field_size))
+                .map(|fields| {
+                    fields.iter().fold(0i64, |acc, field_ty| {
+                        acc.saturating_add(self.size_of_type(field_ty))
                     })
                 })
                 .unwrap_or(0),
