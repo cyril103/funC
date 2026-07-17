@@ -44,8 +44,9 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
             fn_env.locals.push(HashMap::new());
             fn_env.locals.last_mut().unwrap().insert(param.name.clone(), param.ty.clone());
         }
+        fn_env.return_type = Some(function.return_type.clone());
         let body_ty = infer_block(&function.body, &mut fn_env, &env.functions, &mut inferred)?;
-        if body_ty != function.return_type {
+        if !fn_env.saw_return && body_ty != function.return_type {
             return Err(TypeError {
                 message: format!(
                     "la fonction '{}' attend un retour '{}', mais le bloc retourne '{}'",
@@ -67,6 +68,8 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
 struct TypeEnvironment {
     locals: Vec<HashMap<String, Type>>,
     functions: HashMap<String, FunctionSignature>,
+    return_type: Option<Type>,
+    saw_return: bool,
 }
 
 impl TypeEnvironment {
@@ -74,14 +77,20 @@ impl TypeEnvironment {
         Self {
             locals: vec![HashMap::new()],
             functions: HashMap::new(),
+            return_type: None,
+            saw_return: false,
         }
     }
 
     fn clone_empty_scope(&self) -> Self {
         let functions = self.functions.clone();
+        let return_type = self.return_type.clone();
+        let saw_return = self.saw_return;
         Self {
             locals: vec![HashMap::new()],
             functions,
+            return_type,
+            saw_return,
         }
     }
 
@@ -258,6 +267,57 @@ fn infer_expr(
                 infer_expr(post, env, functions, inferred)?;
             }
             Type::Void
+        }
+        ExprKind::Return(value) => {
+            let expected = env
+                .return_type
+                .clone()
+                .unwrap_or_else(|| Type::Void);
+            env.saw_return = true;
+
+            match (value, expected) {
+                (None, Type::Void) => Type::Void,
+                (None, expected) => {
+                    return Err(TypeError {
+                        message: "return sans valeur dans une fonction non-void".to_string(),
+                        line: expr.line,
+                        column: expr.column,
+                        suggestion: Some(
+                            "Ajoutez une expression de retour correspondant au type de la fonction."
+                                .to_string(),
+                        ),
+                    });
+                }
+                (Some(_), Type::Void) => {
+                    return Err(TypeError {
+                        message: "return avec une valeur dans une fonction void".to_string(),
+                        line: expr.line,
+                        column: expr.column,
+                        suggestion: Some(
+                            "Retirez la valeur du return, ou changez le type de la fonction."
+                                .to_string(),
+                        ),
+                    });
+                }
+                (Some(value), expected) => {
+                    let actual = infer_expr(value, env, functions, inferred)?;
+                    if actual != expected {
+                        return Err(TypeError {
+                            message: format!(
+                                "return de type '{}' attendu '{}'",
+                                actual, expected
+                            ),
+                            line: expr.line,
+                            column: expr.column,
+                            suggestion: Some(
+                                "Retournez une expression du type déclaré par la fonction."
+                                    .to_string(),
+                            ),
+                        });
+                    }
+                    expected
+                }
+            }
         }
         ExprKind::Not(expr_arg) => {
             let operand_ty = infer_expr(expr_arg, env, functions, inferred)?;

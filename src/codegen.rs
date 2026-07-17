@@ -203,6 +203,18 @@ impl Generator {
                 post,
                 body,
             } => self.emit_for(init, condition, post, body),
+            ExprKind::Return(value) => {
+                match value {
+                    Some(return_expr) => {
+                        let value = self.emit_expr(return_expr).0.expect("return without value");
+                        let _ = self.builder_ref().build_return(Some(&value));
+                    }
+                    None => {
+                        let _ = self.builder_ref().build_return(None);
+                    }
+                }
+                (None, Type::Void)
+            }
             ExprKind::Not(expr) => {
                 let expr = self.emit_expr(expr);
                 let expr = expr.0.expect("unary ! without value").into_int_value();

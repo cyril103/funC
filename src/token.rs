@@ -14,6 +14,7 @@ pub enum TokenKind {
     If,
     For,
     While,
+    Return,
     Else,
     Alloc,
     Free,

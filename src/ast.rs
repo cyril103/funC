@@ -46,6 +46,7 @@ pub enum ExprKind {
         post: Option<Box<Expr>>,
         body: Block,
     },
+    Return(Option<Box<Expr>>),
     While {
         condition: Box<Expr>,
         body: Block,
@@ -217,6 +218,13 @@ impl Expr {
                     writeln!(f, ";")?;
                 }
                 write!(f, "{}}}", pad)?;
+            }
+            ExprKind::Return(value) => {
+                write!(f, "{}return", pad)?;
+                if let Some(value) = value {
+                    write!(f, " ")?;
+                    value.format(f, 0)?;
+                }
             }
             ExprKind::While { condition, body } => {
                 write!(f, "{}while ", pad)?;

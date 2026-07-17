@@ -214,6 +214,7 @@ impl Lexer {
             "if" => Ok(TokenKind::If),
             "for" => Ok(TokenKind::For),
             "while" => Ok(TokenKind::While),
+            "return" => Ok(TokenKind::Return),
             "else" => Ok(TokenKind::Else),
             "alloc" => Ok(TokenKind::Alloc),
             "free" => Ok(TokenKind::Free),

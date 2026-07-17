@@ -32,7 +32,7 @@
    - ✅ Ajouter `while`
    - ✅ Ajouter `for`
 2. Retour explicite
-   - Ajouter `return` comme mot-clé utilisable dans les blocs
+   - ✅ Ajouter `return` comme mot-clé utilisable dans les blocs
 3. Mutabilité
    - Introduire `let mut`
 4. Fonctions

@@ -144,6 +144,10 @@ impl Parser {
                 self.expect(TokenKind::Semi)?;
                 stmt
             }
+            Some(TokenKind::Return) => {
+                let stmt = self.parse_return()?;
+                stmt
+            }
             Some(TokenKind::For) => {
                 let stmt = self.parse_for()?;
                 stmt
@@ -330,6 +334,18 @@ impl Parser {
                 body,
             },
         ))
+    }
+
+    fn parse_return(&mut self) -> Result<Expr, ParseError> {
+        let (start_line, start_column) = self.current_position();
+        self.expect(TokenKind::Return)?;
+        let value = if self.check(TokenKind::Semi) {
+            None
+        } else {
+            Some(Box::new(self.parse_expression(0)?))
+        };
+        self.expect(TokenKind::Semi)?;
+        Ok(self.expr_at(start_line, start_column, ExprKind::Return(value)))
     }
 
     fn parse_not(&mut self) -> Result<Expr, ParseError> {
@@ -754,6 +770,21 @@ mod tests {
                 assert_eq!(body.expressions.len(), 1);
             }
             _ => panic!("expression racine pas un for"),
+        }
+    }
+
+    #[test]
+    fn parse_return_statement() {
+        let source = "fn main() -> i64 { let x = 1; return x; }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let expr = &program.functions[0].body.expressions[1];
+        match &expr.kind {
+            ExprKind::Return(value) => {
+                assert!(value.is_some());
+            }
+            _ => panic!("expression racine pas un return"),
         }
     }
 }
