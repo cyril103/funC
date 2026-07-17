@@ -73,14 +73,14 @@ ArgumentList  ::= Expression ("," Expression)*
 
 Commandes disponibles avec le CLI:
 
-- `cargo run -- compile sample.fc --emit-ir --out /tmp/sample.ll`
-- `cargo run -- compile sample.fc --emit-obj`
-- `cargo run -- compile sample.fc --emit-exe --out-exe /tmp/fc_sample`
+  - `cargo run -- compile examples/getting-started/sample.fc --emit-ir --out /tmp/sample.ll`
+  - `cargo run -- compile examples/getting-started/sample.fc --emit-obj`
+  - `cargo run -- compile examples/getting-started/sample.fc --emit-exe --out-exe /tmp/fc_sample`
 
 Flux rapide en 3 lignes:
-1. `cargo run -- compile sample.fc --check`
-2. `cargo run -- compile sample.fc --emit-ir --out /tmp/sample.ll`
-3. `cargo run -- compile sample.fc --emit-obj --emit-exe --out-exe ./sample`
+1. `cargo run -- compile examples/getting-started/sample.fc --check`
+2. `cargo run -- compile examples/getting-started/sample.fc --emit-ir --out /tmp/sample.ll`
+3. `cargo run -- compile examples/getting-started/sample.fc --emit-obj --emit-exe --out-exe ./sample`
 
 Exemple de flux complet:
 1. Générer l'IR: `--emit-ir`
@@ -93,9 +93,9 @@ Le compilateur conserve la chaîne:
 ## 🌐 Compilation cross-compilée
 
 Syntaxe `--target` (LLVM triple):
-- `cargo run -- compile sample.fc --emit-obj --target x86_64-pc-windows-msvc`
-- `cargo run -- compile sample.fc --emit-exe --target x86_64-pc-windows-msvc --out-exe sample.exe`
-- `cargo run -- compile sample.fc --emit-obj --target aarch64-unknown-linux-gnu`
+- `cargo run -- compile examples/getting-started/sample.fc --emit-obj --target x86_64-pc-windows-msvc`
+- `cargo run -- compile examples/getting-started/sample.fc --emit-exe --target x86_64-pc-windows-msvc --out-exe sample.exe`
+- `cargo run -- compile examples/getting-started/sample.fc --emit-obj --target aarch64-unknown-linux-gnu`
 
 Aliases supportées:
 - `native` (triple de l’hôte)
@@ -113,8 +113,8 @@ Comportement:
 
 ## ✅ Exemples de validation
 
-- `sample_if_else.fc` : valide `if/else` avec retour d'un même type dans chaque branche.
-- `sample_logic_shortcircuit.fc` : valide le court-circuit de `&&` et `||` (la partie droite peut contenir une expression non-safe qui ne doit pas être exécutée).
+- `examples/getting-started/sample_if_else.fc` : valide `if/else` avec retour d'un même type dans chaque branche.
+- `examples/getting-started/sample_logic_shortcircuit.fc` : valide le court-circuit de `&&` et `||` (la partie droite peut contenir une expression non-safe qui ne doit pas être exécutée).
 
 ## 🧪 Référentiel d’exemples
 
