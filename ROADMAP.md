@@ -59,7 +59,7 @@
 1. Commande de formatage
   - ✅ Ajouter `funC fmt` pour une mise en forme de base
 2. Référentiel d’exemples
-   - `examples/if_else`, `examples/loops`, `examples/pointers`, `examples/cross-target`
+  - ✅ `examples/if_else`, `examples/loops`, `examples/pointers`, `examples/cross-target`
 3. Documentation utilisateur
    - README simplifié avec flux de compilation en 3 lignes
 4. CI

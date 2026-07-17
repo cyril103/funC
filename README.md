@@ -110,3 +110,10 @@ Comportement:
 
 - `sample_if_else.fc` : valide `if/else` avec retour d'un même type dans chaque branche.
 - `sample_logic_shortcircuit.fc` : valide le court-circuit de `&&` et `||` (la partie droite peut contenir une expression non-safe qui ne doit pas être exécutée).
+
+## 🧪 Référentiel d’exemples
+
+- `examples/if_else/basic.fc` : comparateur avec `if/else`.
+- `examples/loops/loops.fc` : exemples de `while` et `for`.
+- `examples/pointers/pointers.fc` : `alloc`, `store`, `load`, `free`.
+- `examples/cross-target/cross-target.fc` : exemple compact pour valider des builds multi-cibles.
