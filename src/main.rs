@@ -138,7 +138,14 @@ fn run_compile(args: CompileArgs) {
     let parsed = match FuncParser::new(lexed).parse_program() {
         Ok(program) => program,
         Err(err) => {
-            eprintln!("Erreur parser: {}:{}: {}", err.line, err.column, err.message);
+            print_diagnostic(
+                &source,
+                "Erreur parser",
+                err.line,
+                err.column,
+                &err.message,
+                Some("Vérifiez la forme attendue à ce point du parse."),
+            );
             process::exit(1);
         }
     };
@@ -147,10 +154,17 @@ fn run_compile(args: CompileArgs) {
         println!("=== AST ===\n{parsed}");
     }
 
-    let types = match typecheck::check(&parsed) {
+    let types = match typecheck::check(&parsed, &source) {
         Ok(infos) => infos,
         Err(err) => {
-            eprintln!("Erreur typage: {err}");
+            print_diagnostic(
+                &source,
+                "Erreur typage",
+                err.line,
+                err.column,
+                &err.message,
+                err.suggestion.as_deref(),
+            );
             process::exit(1);
         }
     };
@@ -352,6 +366,38 @@ fn default_host_target() -> String {
         inner.to_string()
     } else {
         triple
+    }
+}
+
+fn print_diagnostic(
+    source: &str,
+    kind: &str,
+    line: usize,
+    column: usize,
+    message: &str,
+    suggestion: Option<&str>,
+) {
+    eprintln!("{kind} en {line}:{column}: {message}");
+
+    if line == 0 || column == 0 {
+        return;
+    }
+
+    let lines: Vec<&str> = source.lines().collect();
+    if let Some(context) = lines.get(line.saturating_sub(1)) {
+        let gutter = line.to_string().len().max(2);
+        let pointer_offset = column.saturating_sub(1);
+        eprintln!("{:>width$} | {}", line, context, width = gutter);
+        eprintln!(
+            "{:>width$} | {:>pointer$}^",
+            "",
+            "",
+            width = gutter,
+            pointer = pointer_offset + 1
+        );
+    }
+    if let Some(suggestion) = suggestion {
+        eprintln!("  suggestion: {suggestion}");
     }
 }
 

@@ -27,6 +27,8 @@ pub struct Block {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Expr {
     pub id: usize,
+    pub line: usize,
+    pub column: usize,
     pub kind: ExprKind,
 }
 
@@ -43,6 +45,7 @@ pub enum ExprKind {
         then_block: Block,
         else_block: Block,
     },
+    Not(Box<Expr>),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Identifier(String),
     IntLiteral(i64),
@@ -199,6 +202,10 @@ impl Expr {
                     writeln!(f, ";")?;
                 }
                 write!(f, "{}}}", pad)?;
+            }
+            ExprKind::Not(expr) => {
+                write!(f, "{}!", pad)?;
+                expr.format(f, 0)?;
             }
             ExprKind::Binary(op, lhs, rhs) => {
                 lhs.format(f, 0)?;

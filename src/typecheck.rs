@@ -13,9 +13,10 @@ pub struct TypeError {
     pub message: String,
     pub line: usize,
     pub column: usize,
+    pub suggestion: Option<String>,
 }
 
-pub fn check(program: &Program) -> Result<HashMap<usize, Type>, TypeError> {
+pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, TypeError> {
     let mut env = TypeEnvironment::new();
 
     for function in &program.functions {
@@ -24,6 +25,7 @@ pub fn check(program: &Program) -> Result<HashMap<usize, Type>, TypeError> {
                 message: format!("fonction '{}' déjà déclarée", function.name),
                 line: 0,
                 column: 0,
+                suggestion: Some("Renommez une fonction en doublon ou supprimez la redéfinition.".to_string()),
             });
         }
         env.functions.insert(
@@ -51,6 +53,9 @@ pub fn check(program: &Program) -> Result<HashMap<usize, Type>, TypeError> {
                 ),
                 line: 0,
                 column: 0,
+                suggestion: Some(
+                    "Assurez-vous que toutes les branches retournent le type attendu par la fonction.".to_string(),
+                ),
             });
         }
     }
@@ -135,8 +140,9 @@ fn infer_expr(
                             "mauvaise annotation: la variable '{}' attend {}, trouvé {}",
                             name, ann, init_ty
                         ),
-                        line: 0,
-                        column: 0,
+                        line: expr.line,
+                        column: expr.column,
+                        suggestion: Some(format!("Déclarez '{}' avec le type '{}' ou ajustez son initialisation.", name, init_ty).to_string()),
                     });
                 }
             }
@@ -155,17 +161,21 @@ fn infer_expr(
                                 "type incompatible in store: pointeur vers {}, valeur {}",
                                 inner, value_ty
                             ),
-                            line: 0,
-                            column: 0,
+                            line: expr.line,
+                            column: expr.column,
+                            suggestion: Some("Assurez-vous que la valeur et le pointeur ont le même type élémentaire.".to_string()),
                         });
                     }
                 }
                 _ => {
                     return Err(TypeError {
                         message: "store attend un pointeur en second argument".to_string(),
-                        line: 0,
-                        column: 0,
-                    })
+                        line: expr.line,
+                        column: expr.column,
+                        suggestion: Some(
+                            "Passez un pointeur créé par alloc/load en second argument de store.".to_string(),
+                        ),
+                    });
                 }
             }
             Type::Void
@@ -182,8 +192,9 @@ fn infer_expr(
                         "condition if doit être bool, trouvé {}",
                         cond_ty
                     ),
-                    line: 0,
-                    column: 0,
+                    line: expr.line,
+                    column: expr.column,
+                    suggestion: Some("Utilisez une expression booléenne dans la condition de if.".to_string()),
                 });
             }
 
@@ -196,19 +207,35 @@ fn infer_expr(
                         "branches if/else de types différents: {} vs {}",
                         then_ty, else_ty
                     ),
-                    line: 0,
-                    column: 0,
+                    line: expr.line,
+                    column: expr.column,
+                    suggestion: Some(
+                        "Faites retourner le même type dans les branches then/else.".to_string(),
+                    ),
                 });
             }
             then_ty
+        }
+        ExprKind::Not(expr_arg) => {
+            let operand_ty = infer_expr(expr_arg, env, functions, inferred)?;
+            if operand_ty != Type::Bool {
+                return Err(TypeError {
+                    message: format!("! attend bool, trouvé {}", operand_ty),
+                    line: expr.line,
+                    column: expr.column,
+                    suggestion: Some("L'opérateur ! s'applique uniquement aux booléens.".to_string()),
+                });
+            }
+            Type::Bool
         }
         ExprKind::Binary(op, left, right) => infer_binary(*op, left, right, env, functions, inferred)?,
         ExprKind::Identifier(name) => env
             .resolve(name)
             .ok_or_else(|| TypeError {
                 message: format!("identifiant '{}' inconnu", name),
-                line: 0,
-                column: 0,
+                line: expr.line,
+                column: expr.column,
+                suggestion: Some("Déclarez d'abord la variable avec let avant de l'utiliser.".to_string()),
             })?,
         ExprKind::IntLiteral(_) => Type::I64,
         ExprKind::FloatLiteral(_) => Type::F64,
@@ -216,8 +243,9 @@ fn infer_expr(
         ExprKind::Call { name, args } => {
             let sig = functions.get(name).ok_or_else(|| TypeError {
                 message: format!("fonction '{}' inconnue", name),
-                line: 0,
-                column: 0,
+                line: expr.line,
+                column: expr.column,
+                suggestion: Some("Vérifiez le nom de la fonction ou définissez-la avant l'appel.".to_string()),
             })?;
             if sig.params.len() != args.len() {
                 return Err(TypeError {
@@ -227,8 +255,9 @@ fn infer_expr(
                         sig.params.len(),
                         args.len()
                     ),
-                    line: 0,
-                    column: 0,
+                    line: expr.line,
+                    column: expr.column,
+                    suggestion: Some("Ajustez le nombre d'arguments pour appeler la fonction.".to_string()),
                 });
             }
             for (idx, arg) in args.iter().enumerate() {
@@ -239,8 +268,9 @@ fn infer_expr(
                             "arg {} de '{}' attend {}, trouvé {}",
                             idx, name, sig.params[idx], arg_ty
                         ),
-                        line: 0,
-                        column: 0,
+                        line: expr.line,
+                        column: expr.column,
+                        suggestion: Some(format!("Corrigez le type de l'argument {} attendu par {}.", idx, name)),
                     });
                 }
             }
@@ -251,8 +281,11 @@ fn infer_expr(
             if size_ty != Type::I64 && size_ty != Type::I32 {
                 return Err(TypeError {
                     message: "alloc attend un entier de taille".to_string(),
-                    line: 0,
-                    column: 0,
+                    line: expr.line,
+                    column: expr.column,
+                    suggestion: Some(
+                        "Passez un entier (i32 ou i64) représentant une taille en octets.".to_string(),
+                    ),
                 });
             }
             Type::Pointer(Box::new(Type::I8))
@@ -264,9 +297,10 @@ fn infer_expr(
                 _ => {
                     return Err(TypeError {
                         message: "free attend un pointeur".to_string(),
-                        line: 0,
-                        column: 0,
-                    })
+                        line: expr.line,
+                        column: expr.column,
+                        suggestion: Some("Passez un pointeur alloué par alloc à free.".to_string()),
+                    });
                 }
             }
         }
@@ -276,9 +310,10 @@ fn infer_expr(
                 _ => {
                     return Err(TypeError {
                         message: "load attend un pointeur".to_string(),
-                        line: 0,
-                        column: 0,
-                    })
+                        line: expr.line,
+                        column: expr.column,
+                        suggestion: Some("Chargez une valeur depuis un pointeur existant.".to_string()),
+                    });
                 }
             }
         }
@@ -315,9 +350,13 @@ fn infer_binary(
 
     if left_ty != right_ty {
         return Err(TypeError {
-            message: format!("opération '{}' incompatible entre {} et {}", op, left_ty, right_ty),
-            line: 0,
-            column: 0,
+            message: format!(
+                "opération '{}' incompatible entre {} et {}",
+                op, left_ty, right_ty
+            ),
+            line: right.line,
+            column: right.column,
+            suggestion: Some("Assurez-vous que les deux opérandes ont le même type.".to_string()),
         });
     }
 
@@ -326,8 +365,9 @@ fn infer_binary(
             if left_ty != Type::Bool {
                 return Err(TypeError {
                     message: "&& et || attendent des booléens".to_string(),
-                    line: 0,
-                    column: 0,
+                    line: right.line,
+                    column: right.column,
+                    suggestion: Some("Utilisez || et && seulement avec des booléens.".to_string()),
                 });
             }
             Type::Bool
@@ -336,8 +376,9 @@ fn infer_binary(
             if !left_ty.is_numeric() && left_ty != Type::Bool && !matches!(left_ty, Type::Pointer(_)) {
                 return Err(TypeError {
                     message: "comparaison indisponible sur ce type".to_string(),
-                    line: 0,
-                    column: 0,
+                    line: right.line,
+                    column: right.column,
+                    suggestion: Some("Comparez seulement des types numériques, booléens ou pointeurs.".to_string()),
                 });
             }
             Type::Bool
@@ -346,8 +387,9 @@ fn infer_binary(
             if !(left_ty.is_numeric() || matches!(left_ty, Type::Pointer(_))) {
                 return Err(TypeError {
                     message: "comparaison relationnelle attend un type numérique ou un pointeur".to_string(),
-                    line: 0,
-                    column: 0,
+                    line: right.line,
+                    column: right.column,
+                    suggestion: Some("Utilisez < > <= >= avec nombres entiers/flottants ou pointeurs.".to_string()),
                 });
             }
             Type::Bool
@@ -356,8 +398,9 @@ fn infer_binary(
             if !left_ty.is_numeric() {
                 return Err(TypeError {
                     message: format!("opération arithmétique non supportée sur {}", left_ty),
-                    line: 0,
-                    column: 0,
+                    line: right.line,
+                    column: right.column,
+                    suggestion: Some("Utilisez des types numériques pour les opérations arithmétiques.".to_string()),
                 });
             }
             left_ty
@@ -381,7 +424,11 @@ fn size_of_type(ty: &Type) -> Option<i64> {
 
 impl std::fmt::Display for TypeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}: {}", self.line, self.column, self.message)
+        write!(f, "{}:{}: {}", self.line, self.column, self.message)?;
+        if let Some(suggestion) = &self.suggestion {
+            write!(f, "\n  suggestion: {suggestion}")?;
+        }
+        Ok(())
     }
 }
 

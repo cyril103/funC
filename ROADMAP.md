@@ -1,13 +1,24 @@
 # 🗺️ Feuille de Route : Compilateur FunC v2
 
+## 🧭 Reprise immédiate (à partir d'aujourd'hui)
+1. Finaliser `Objectif 1`
+2. ✅ Prioriser les 3 premières cartes, valables en l'état :
+3. ✅ Ajouter `else if` et l’`else if` chaîné
+4. ✅ Accepter la condition `if` entre parenthèses
+5. ✅ Ajouter l’opérateur `!` booléen
+6. ✅ Préparer l’erreur parser/typecheck avec `line:column`, extrait source et suggestion
+7. Implémenter `funC compile --check` (analyse seule)
+8. Implémenter `funC asm` via `--emit-asm`
+9. Uniformiser la sortie exécutable avec `--out-exe` sur toutes les cibles
+
 ## 🧭 Objectif 1 — MVP robuste (2–4 séances)
 1. `if / else` plus riche
-   - Ajouter `else if`
-   - Accepter la parenthèse conditionnelle optionnelle
-   - Ajouter l'opérateur booléen `!`
+   - ✅ Ajouter `else if`
+   - ✅ Accepter la parenthèse conditionnelle optionnelle
+   - ✅ Ajouter l'opérateur booléen `!`
 2. Diagnostic UX
-   - Enrichir toutes les erreurs parser/typecheck avec `line:column`
-   - Afficher un extrait de source et une suggestion de correction
+   - ✅ Enrichir toutes les erreurs parser/typecheck avec `line:column`
+   - ✅ Afficher un extrait de source et une suggestion de correction
 3. Commande CLI `check`
    - Ajouter `funC compile` avec mode d'analyse-only (`--check`)
    - Parse + typage sans génération d'IR

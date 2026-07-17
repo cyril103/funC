@@ -161,6 +161,7 @@ impl Parser {
     }
 
     fn parse_let(&mut self) -> Result<Expr, ParseError> {
+        let (start_line, start_column) = self.current_position();
         self.expect(TokenKind::Let)?;
         let name = self.consume_identifier("nom de variable")?;
         let ty = if self.check(TokenKind::Colon) {
@@ -171,7 +172,7 @@ impl Parser {
         };
         self.expect(TokenKind::Eq)?;
         let value = self.parse_expression(0)?;
-        Ok(self.expr(ExprKind::Let {
+        Ok(self.expr_at(start_line, start_column, ExprKind::Let {
             name,
             ty,
             value: Box::new(value),
@@ -179,16 +180,18 @@ impl Parser {
     }
 
     fn parse_store(&mut self) -> Result<Expr, ParseError> {
+        let (start_line, start_column) = self.current_position();
         self.expect(TokenKind::Store)?;
         self.expect(TokenKind::LParen)?;
         let value = self.parse_expression(0)?;
         self.expect(TokenKind::Comma)?;
         let ptr = self.parse_expression(0)?;
         self.expect(TokenKind::RParen)?;
-        Ok(self.expr(ExprKind::Store(Box::new(value), Box::new(ptr))))
+        Ok(self.expr_at(start_line, start_column, ExprKind::Store(Box::new(value), Box::new(ptr))))
     }
 
     fn parse_expression(&mut self, min_prec: u8) -> Result<Expr, ParseError> {
+        let (start_line, start_column) = self.current_position();
         let mut lhs = self.parse_unary_expression()?;
         while let Some((op, prec, left_assoc)) = Self::binary_meta(self.current_kind()) {
             if prec < min_prec {
@@ -199,11 +202,13 @@ impl Parser {
             let rhs = self.parse_expression(next_min)?;
             lhs = self.expr(ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)));
         }
+        lhs = self.retag_expr(lhs, start_line, start_column);
         Ok(lhs)
     }
 
     fn parse_unary_expression(&mut self) -> Result<Expr, ParseError> {
         match self.current_kind() {
+            Some(TokenKind::Not) => self.parse_not(),
             Some(TokenKind::If) => self.parse_if_else(),
             Some(TokenKind::LBrace) => {
                 let block = self.parse_block()?;
@@ -231,16 +236,42 @@ impl Parser {
     }
 
     fn parse_if_else(&mut self) -> Result<Expr, ParseError> {
+        let (start_line, start_column) = self.current_position();
         self.expect(TokenKind::If)?;
-        let condition = self.parse_expression(0)?;
+        let condition = if self.check(TokenKind::LParen) {
+            self.bump();
+            let condition = self.parse_expression(0)?;
+            self.expect(TokenKind::RParen)?;
+            condition
+        } else {
+            self.parse_expression(0)?
+        };
         let then_block = self.parse_block()?;
         self.expect(TokenKind::Else)?;
-        let else_block = self.parse_block()?;
-        Ok(self.expr(ExprKind::IfElse {
+        let else_block = if self.check(TokenKind::If) {
+            let else_if = self.parse_if_else()?;
+            Block {
+                expressions: vec![else_if],
+            }
+        } else {
+            self.parse_block()?
+        };
+        Ok(self.expr_at(start_line, start_column, ExprKind::IfElse {
             condition: Box::new(condition),
             then_block,
             else_block,
         }))
+    }
+
+    fn parse_not(&mut self) -> Result<Expr, ParseError> {
+        let (start_line, start_column) = self.current_position();
+        self.expect(TokenKind::Not)?;
+        let expr = self.parse_unary_expression()?;
+        Ok(self.expr_at(
+            start_line,
+            start_column,
+            ExprKind::Not(Box::new(expr)),
+        ))
     }
 
     fn parse_postfix(&mut self) -> Result<Expr, ParseError> {
@@ -352,9 +383,32 @@ impl Parser {
     }
 
     fn expr(&mut self, kind: ExprKind) -> Expr {
+        self.rebuild_expr(kind, self.current_position())
+    }
+
+    fn expr_at(&mut self, line: usize, column: usize, kind: ExprKind) -> Expr {
+        self.rebuild_expr(kind, (line, column))
+    }
+
+    fn rebuild_expr(&mut self, kind: ExprKind, (line, column): (usize, usize)) -> Expr {
         let id = self.next_expr_id;
         self.next_expr_id += 1;
-        Expr { id, kind }
+        Expr {
+            id,
+            line,
+            column,
+            kind,
+        }
+    }
+
+    fn retag_expr(&self, mut expr: Expr, line: usize, column: usize) -> Expr {
+        expr.line = line;
+        expr.column = column;
+        expr
+    }
+
+    fn current_position(&self) -> (usize, usize) {
+        (self.current_line(), self.current_column())
     }
 
     fn consume_identifier(&mut self, label: &str) -> Result<String, ParseError> {
@@ -509,6 +563,66 @@ mod tests {
                 ));
             }
             _ => panic!("expression racine pas un if-else"),
+        }
+    }
+
+    #[test]
+    fn parse_else_if_chain() {
+        let source =
+            "fn main() -> i64 { if 1 < 2 { 1; } else if 2 < 3 { 2; } else { 3; } }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let top_if = &program.functions[0].body.expressions[0];
+        match &top_if.kind {
+            ExprKind::IfElse {
+                then_block,
+                else_block,
+                ..
+            } => {
+                assert!(matches!(
+                    then_block.expressions[0].kind,
+                    ExprKind::IntLiteral(1)
+                ));
+                assert_eq!(else_block.expressions.len(), 1);
+                assert!(matches!(
+                    else_block.expressions[0].kind,
+                    ExprKind::IfElse { .. }
+                ));
+            }
+            _ => panic!("expression racine pas un if-else"),
+        }
+    }
+
+    #[test]
+    fn parse_if_with_parenthesized_condition() {
+        let source =
+            "fn main() -> i64 { if (1 < 2) { 1; } else { 2; } }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let top_if = &program.functions[0].body.expressions[0];
+        match &top_if.kind {
+            ExprKind::IfElse { condition, .. } => {
+                assert!(matches!(condition.kind, ExprKind::Binary(BinaryOp::Lt, _, _)));
+            }
+            _ => panic!("expression racine pas un if-else"),
+        }
+    }
+
+    #[test]
+    fn parse_not_operator() {
+        let source = "fn main() -> bool { !true && false; }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let expr = &program.functions[0].body.expressions[0];
+        match &expr.kind {
+            ExprKind::Binary(BinaryOp::And, lhs, rhs) => {
+                assert!(matches!(lhs.kind, ExprKind::Not(_)));
+                assert!(matches!(rhs.kind, ExprKind::BoolLiteral(false)));
+            }
+            _ => panic!("l'expression racine doit être un &&"),
         }
     }
 
