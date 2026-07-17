@@ -859,6 +859,10 @@ pub fn generate(program: &Program, types: &HashMap<usize, Type>) -> String {
 fn declare_runtime(context: *const Context, module: *const Module<'static>) {
     let context = unsafe { &*context };
     let module = unsafe { &*module };
+    let i8_ptr_type = context.ptr_type(AddressSpace::default());
+    let i8_type = context.i8_type();
+    let i64_type = context.i64_type();
+
     let malloc_type = context
         .ptr_type(AddressSpace::default())
         .fn_type(&[context.i64_type().into()], false);
@@ -868,6 +872,18 @@ fn declare_runtime(context: *const Context, module: *const Module<'static>) {
         .void_type()
         .fn_type(&[context.ptr_type(AddressSpace::default()).into()], false);
     let _ = module.add_function("free", free_type, None);
+
+    let realloc_type = i8_ptr_type
+        .fn_type(&[i8_ptr_type.into(), i64_type.into()], false);
+    let _ = module.add_function("realloc", realloc_type, None);
+
+    let memcpy_type = i8_ptr_type
+        .fn_type(&[i8_ptr_type.into(), i8_ptr_type.into(), i64_type.into()], false);
+    let _ = module.add_function("memcpy", memcpy_type, None);
+
+    let memset_type = i8_ptr_type
+        .fn_type(&[i8_ptr_type.into(), i8_type.into(), i64_type.into()], false);
+    let _ = module.add_function("memset", memset_type, None);
 }
 
 pub fn init_target_machine() -> inkwell::targets::TargetTriple {

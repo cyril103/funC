@@ -73,6 +73,6 @@
 2. Types complexes
   - ✅ Ajouter `struct` et `enum`
 3. Builtins mémoire
-   - Ajouter `memcpy`, `memset`, `realloc`
+   - ✅ Ajouter `memcpy`, `memset`, `realloc`
 4. Debug info
    - Générer une option `--debug-info`

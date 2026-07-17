@@ -18,6 +18,35 @@ pub struct TypeError {
 
 pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, TypeError> {
     let mut env = TypeEnvironment::new();
+    env.functions.insert(
+        "realloc".to_string(),
+        FunctionSignature {
+            params: vec![Type::Pointer(Box::new(Type::I8)), Type::I64],
+            return_type: Type::Pointer(Box::new(Type::I8)),
+        },
+    );
+    env.functions.insert(
+        "memcpy".to_string(),
+        FunctionSignature {
+            params: vec![
+                Type::Pointer(Box::new(Type::I8)),
+                Type::Pointer(Box::new(Type::I8)),
+                Type::I64,
+            ],
+            return_type: Type::Pointer(Box::new(Type::I8)),
+        },
+    );
+    env.functions.insert(
+        "memset".to_string(),
+        FunctionSignature {
+            params: vec![
+                Type::Pointer(Box::new(Type::I8)),
+                Type::I8,
+                Type::I64,
+            ],
+            return_type: Type::Pointer(Box::new(Type::I8)),
+        },
+    );
 
     for struct_decl in &program.structs {
         if env.functions.contains_key(&struct_decl.name)
@@ -407,6 +436,14 @@ mod tests {
         let program = parse_program("fn main(p: Unknown) -> Unknown { return p; }");
         let err = check(&program, "").unwrap_err();
         assert!(err.message.contains("type inconnu"));
+    }
+
+    #[test]
+    fn memory_builtin_calls_are_available() {
+        let program = parse_program(
+            "fn main() -> void { let p = alloc(16); let q = realloc(p, 32); memcpy(q, p, 16); memset(q, 0, 8); free(q); }",
+        );
+        assert!(check(&program, "").is_ok());
     }
 }
 
