@@ -130,6 +130,27 @@ fn parser_regression_rejects_syntax_error() {
 }
 
 #[test]
+fn parser_regression_accepts_ast_for_complex_source() {
+    let input = temp_source_file(
+        "parser_ast",
+        "fn main() -> i64 {\n    return 42;\n}\n",
+    );
+
+    let result = Command::new(env!("CARGO_BIN_EXE_funC"))
+        .args([
+            "compile",
+            "--emit-ast",
+            input.to_str().expect("utf8"),
+        ])
+        .output()
+        .expect("run funC");
+
+    assert!(result.status.success());
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(stdout.contains("fn main"));
+}
+
+#[test]
 fn backend_regression_emits_object_for_native_and_compatible_aliases() {
     let input = temp_source_file(
         "backend_object",
@@ -299,6 +320,21 @@ fn typecheck_regression_rejects_type_mismatch() {
 }
 
 #[test]
+fn typecheck_regression_accepts_inferred_and_explicit_types() {
+    let input = temp_source_file(
+        "typecheck_ok",
+        "fn id(x: i64) -> i64 {\n    return x;\n}\n\nfn main() -> i64 {\n    return id(42);\n}\n",
+    );
+
+    let status = Command::new(env!("CARGO_BIN_EXE_funC"))
+        .args(["compile", "--check", input.to_str().expect("utf8")])
+        .status()
+        .expect("run funC");
+
+    assert!(status.success());
+}
+
+#[test]
 fn codegen_regression_emits_llvm_ir() {
     let mut output = PathBuf::from(std::env::temp_dir());
     let nanos = SystemTime::now()
@@ -324,6 +360,41 @@ fn codegen_regression_emits_llvm_ir() {
     assert!(status.success());
     assert!(output.exists());
     assert!(fs::metadata(&output).expect("metadata").len() > 0);
+}
+
+#[test]
+fn codegen_regression_emits_asm_from_loop() {
+    let input = temp_source_file(
+        "codegen_asm",
+        "fn main() -> i64 {\n    return 12 + 7;\n}\n",
+    );
+
+    let mut output = PathBuf::from(std::env::temp_dir());
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time")
+        .as_nanos();
+    output.push(format!(
+        "func_regression_codegen_asm_{}_{}.s",
+        std::process::id(),
+        nanos
+    ));
+
+    let status = Command::new(env!("CARGO_BIN_EXE_funC"))
+        .args([
+            "compile",
+            "--emit-asm",
+            "--out-asm",
+            output.to_str().expect("utf8"),
+            input.to_str().expect("utf8"),
+        ])
+        .status()
+        .expect("run funC");
+
+    assert!(status.success());
+    assert!(output.exists());
+    let asm = fs::read_to_string(&output).expect("read asm output");
+    assert!(!asm.trim().is_empty());
 }
 
 #[test]
@@ -400,4 +471,13 @@ fn import_regression_compiles_multiple_files() {
         .expect("run funC");
 
     assert!(status.success());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn runtime_regression_if_else_executable_returns_expected_code() {
+    let mut input = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    input.push("examples/getting-started/sample_if_else.fc");
+
+    build_and_run_executable(&input, Some("x86_64-unknown-linux-gnu"), 10);
 }
