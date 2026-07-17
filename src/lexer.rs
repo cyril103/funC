@@ -110,6 +110,10 @@ impl Lexer {
                         TokenKind::Not
                     }
                 }
+                '"' => {
+                    let value = self.lex_string()?;
+                    TokenKind::StringLiteral(value)
+                }
                 '<' => {
                     self.bump();
                     if self.match_next('=') {
@@ -176,6 +180,62 @@ impl Lexer {
         Ok(tokens)
     }
 
+    fn lex_string(&mut self) -> Result<String, LexError> {
+        let start_line = self.line;
+        let start_column = self.column;
+        self.bump();
+        let mut chars = Vec::new();
+        while let Some(ch) = self.peek() {
+            if ch == '"' {
+                self.bump();
+                let value = chars.into_iter().collect();
+                return Ok(value);
+            }
+            if ch == '\\' {
+                self.bump();
+                let escaped = self.peek().ok_or_else(|| LexError {
+                    message: "chaîne: caractère d'échappement en fin de chaîne".to_string(),
+                    line: self.line,
+                    column: self.column,
+                })?;
+                match escaped {
+                    '"' => {
+                        self.bump();
+                        chars.push('"');
+                    }
+                    'n' => {
+                        self.bump();
+                        chars.push('\n');
+                    }
+                    'r' => {
+                        self.bump();
+                        chars.push('\r');
+                    }
+                    't' => {
+                        self.bump();
+                        chars.push('\t');
+                    }
+                    '\\' => {
+                        self.bump();
+                        chars.push('\\');
+                    }
+                    other => {
+                        self.bump();
+                        chars.push(other);
+                    }
+                }
+            } else {
+                self.bump();
+                chars.push(ch);
+            }
+        }
+        Err(LexError {
+            message: "chaîne non fermée".to_string(),
+            line: start_line,
+            column: start_column,
+        })
+    }
+
     fn skip_ws_and_comments(&mut self) {
         loop {
             match self.peek() {
@@ -220,6 +280,7 @@ impl Lexer {
             "fn" => Ok(TokenKind::Fn),
             "let" => Ok(TokenKind::Let),
             "mut" => Ok(TokenKind::Mut),
+            "import" => Ok(TokenKind::Import),
             "if" => Ok(TokenKind::If),
             "for" => Ok(TokenKind::For),
             "while" => Ok(TokenKind::While),

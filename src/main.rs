@@ -1,4 +1,6 @@
 use std::{fs, path::{Path, PathBuf}, process};
+use std::collections::HashSet;
+use crate::ast::Program;
 
 use clap::{Args, Parser as ClapParser, Subcommand};
 use lexer::Lexer;
@@ -210,25 +212,10 @@ fn run_compile(args: CompileArgs) {
         }
     };
 
-    let lexed = match Lexer::new(&source).tokenize() {
-        Ok(tokens) => tokens,
-        Err(err) => {
-            eprintln!("Erreur lexer: {err}");
-            process::exit(1);
-        }
-    };
-
-    let mut parsed = match FuncParser::new(lexed).parse_program() {
+    let mut parsed = match load_program_from_entry(&args.input) {
         Ok(program) => program,
         Err(err) => {
-            print_diagnostic(
-                &source,
-                "Erreur parser",
-                err.line,
-                err.column,
-                &err.message,
-                Some("Vérifiez la forme attendue à ce point du parse."),
-            );
+            eprintln!("{err}");
             process::exit(1);
         }
     };
@@ -471,6 +458,83 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
     }
 
     PathBuf::from(object_path)
+}
+
+fn load_program_from_entry(entry: &str) -> Result<Program, String> {
+    let mut visited = HashSet::new();
+    let mut functions = Vec::new();
+    let entry_path = Path::new(entry);
+    load_module_program(entry_path, &mut visited, &mut functions)?;
+    Ok(Program {
+        functions,
+        imports: Vec::new(),
+    })
+}
+
+fn load_module_program(
+    path: &Path,
+    visited: &mut HashSet<PathBuf>,
+    functions: &mut Vec<crate::ast::Function>,
+) -> Result<(), String> {
+    let canonical = path.canonicalize().map_err(|err| {
+        format!(
+            "Impossible de localiser le module '{}': {err}",
+            path.to_string_lossy()
+        )
+    })?;
+
+    if visited.contains(&canonical) {
+        return Ok(());
+    }
+    visited.insert(canonical.clone());
+
+    let source = fs::read_to_string(&canonical).map_err(|err| {
+        format!("Impossible de lire le module '{}': {err}", canonical.display())
+    })?;
+
+    let lexed = Lexer::new(&source)
+        .tokenize()
+        .map_err(|err| format!(
+            "{}:{}:{}: Erreur lexer: {}",
+            canonical.display(),
+            err.line,
+            err.column,
+            err.message
+        ))?;
+
+    let parsed = FuncParser::new(lexed)
+        .parse_program()
+        .map_err(|err| format!(
+            "{}:{}:{}: Erreur parser: {}",
+            canonical.display(),
+            err.line,
+            err.column,
+            err.message
+        ))?;
+
+    let base_dir = canonical.parent().unwrap_or(Path::new("."));
+    for import in &parsed.imports {
+        let import_path = resolve_import_path(base_dir, import);
+        load_module_program(&import_path, visited, functions)?;
+    }
+
+    functions.extend(parsed.functions);
+    Ok(())
+}
+
+fn resolve_import_path(base_dir: &Path, raw_import: &str) -> PathBuf {
+    let normalized = if raw_import.ends_with(".fc") {
+        raw_import.to_string()
+    } else {
+        format!("{raw_import}.fc")
+    };
+
+    let import_path = Path::new(&normalized);
+    if import_path.is_absolute() {
+        import_path.to_path_buf()
+    } else {
+        base_dir.join(import_path)
+    }
 }
 
 fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &TargetInfo) {

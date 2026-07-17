@@ -69,9 +69,9 @@
 
 ## 🌌 Objectif 5 — Pistes avancées
 1. Modules
-   - Ajouter un système `import` simple pour compiler plusieurs fichiers
+  - ✅ Ajouter un système `import` simple pour compiler plusieurs fichiers
 2. Types complexes
-   - Ajouter `struct` et `enum`
+  - Ajouter `struct` et `enum`
 3. Builtins mémoire
    - Ajouter `memcpy`, `memset`, `realloc`
 4. Debug info

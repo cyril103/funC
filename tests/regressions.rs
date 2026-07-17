@@ -77,3 +77,15 @@ fn codegen_regression_emits_llvm_ir() {
     assert!(fs::metadata(&output).expect("metadata").len() > 0);
 }
 
+#[test]
+fn import_regression_compiles_multiple_files() {
+    let mut input = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    input.push("examples/modules/main.fc");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_funC"))
+        .args(["compile", "--emit-ir", "--check", input.to_str().expect("utf8")])
+        .status()
+        .expect("run funC");
+
+    assert!(status.success());
+}

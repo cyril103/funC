@@ -21,10 +21,46 @@ impl Parser {
 
     pub fn parse_program(mut self) -> Result<Program, ParseError> {
         let mut functions = Vec::new();
+        let mut imports = Vec::new();
         while !self.check(TokenKind::Eof) {
-            functions.push(self.parse_function()?);
+            match self.current_kind() {
+                Some(TokenKind::Import) => {
+                    imports.push(self.parse_import()?);
+                }
+                _ => {
+                    functions.push(self.parse_function()?);
+                }
+            }
         }
-        Ok(Program { functions })
+        Ok(Program { functions, imports })
+    }
+
+    fn parse_import(&mut self) -> Result<String, ParseError> {
+        let line = self.current_line();
+        let column = self.current_column();
+        self.expect(TokenKind::Import)?;
+        let raw = match self.bump() {
+            Some(Token {
+                kind: TokenKind::StringLiteral(value),
+                ..
+            }) => value,
+            Some(tok) => {
+                return Err(ParseError {
+                    message: format!("chemin d'import attendu, trouvé {:?}", tok.kind),
+                    line: tok.line,
+                    column: tok.column,
+                });
+            }
+            None => {
+                return Err(ParseError {
+                    message: "chemin d'import attendu mais fin de fichier atteinte".to_string(),
+                    line,
+                    column,
+                });
+            }
+        };
+        self.expect(TokenKind::Semi)?;
+        Ok(raw)
     }
 
     fn parse_function(&mut self) -> Result<Function, ParseError> {
@@ -873,6 +909,16 @@ mod tests {
             ExprKind::Assign { name, .. } => assert_eq!(name, "x"),
             _ => panic!("assignment attendue"),
         }
+    }
+
+    #[test]
+    fn parse_import_statement_collects_path() {
+        let source = "import \"math\"; fn main() -> i64 { 0 }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        assert_eq!(program.imports, vec!["math".to_string()]);
+        assert_eq!(program.functions.len(), 1);
+        assert_eq!(program.functions[0].name, "main");
     }
 
     #[test]

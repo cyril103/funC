@@ -12,6 +12,7 @@ pub enum TokenKind {
     Fn,
     Let,
     Mut,
+    Import,
     If,
     For,
     While,
@@ -37,6 +38,7 @@ pub enum TokenKind {
     Void,
     True,
     False,
+    StringLiteral(String),
 
     Identifier(String),
     IntLiteral(i64),

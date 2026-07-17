@@ -3,6 +3,7 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub functions: Vec<Function>,
+    pub imports: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -362,6 +363,10 @@ impl fmt::Display for Function {
 
 impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for import in &self.imports {
+            writeln!(f, "import \"{import}\";")?;
+            writeln!(f)?;
+        }
         for (idx, function) in self.functions.iter().enumerate() {
             if idx > 0 {
                 writeln!(f)?;
