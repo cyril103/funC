@@ -77,6 +77,11 @@ Commandes disponibles avec le CLI:
 - `cargo run -- compile sample.fc --emit-obj`
 - `cargo run -- compile sample.fc --emit-exe --out-exe /tmp/fc_sample`
 
+Flux rapide en 3 lignes:
+1. `cargo run -- compile sample.fc --check`
+2. `cargo run -- compile sample.fc --emit-ir --out /tmp/sample.ll`
+3. `cargo run -- compile sample.fc --emit-obj --emit-exe --out-exe ./sample`
+
 Exemple de flux complet:
 1. Générer l'IR: `--emit-ir`
 2. Générer un objet: `--emit-obj`

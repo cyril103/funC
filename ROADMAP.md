@@ -61,7 +61,7 @@
 2. Référentiel d’exemples
   - ✅ `examples/if_else`, `examples/loops`, `examples/pointers`, `examples/cross-target`
 3. Documentation utilisateur
-   - README simplifié avec flux de compilation en 3 lignes
+  - ✅ README simplifié avec flux de compilation en 3 lignes
 4. CI
    - Workflow GitHub Actions : build + tests + check docs
 5. Tests d’intégration
