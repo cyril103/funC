@@ -75,4 +75,4 @@
 3. Builtins mémoire
    - ✅ Ajouter `memcpy`, `memset`, `realloc`
 4. Debug info
-   - Générer une option `--debug-info`
+   - ✅ Générer une option `--debug-info`

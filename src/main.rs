@@ -52,6 +52,10 @@ struct CompileArgs {
     #[arg(long)]
     warn_memory: bool,
 
+    /// Génère les métadonnées de debug dans la sortie llc (DWARF)
+    #[arg(long)]
+    debug_info: bool,
+
     /// Affiche l'IR LLVM textuelle dans la sortie standard
     #[arg(long)]
     emit_ir: bool,
@@ -361,6 +365,9 @@ fn emit_asm(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
 
     let mut cmd = process::Command::new("llc");
     cmd.arg("-filetype=asm");
+    if args.debug_info {
+        cmd.arg("-g");
+    }
     cmd.arg("-o");
     cmd.arg(&asm_path);
     cmd.arg(format!("-mtriple={}", target.triple));
@@ -428,6 +435,9 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
 
     let mut cmd = process::Command::new("llc");
     cmd.arg("-filetype=obj");
+    if args.debug_info {
+        cmd.arg("-g");
+    }
     cmd.arg("-o");
     cmd.arg(&object_path);
     cmd.arg(format!("-mtriple={}", target.triple));
