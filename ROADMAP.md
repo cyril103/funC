@@ -21,7 +21,7 @@
 ### Phase 2 — Productivité langage (2–3 semaines)
 - [x] Élargir le constant folding (comparaisons booléennes et propagation de constantes simples).
 - [x] Optimisations locales sûres (élimination de code mort local / branchements inutiles).
-- [ ] Ajouter des helpers de style (`assert`, `panic` minimal) au niveau bibliothèque standard.
+- [x] Ajouter des helpers de style (`assert`, `panic` minimal) au niveau bibliothèque standard.
 - [ ] Définir une mini-std (`func::`) pour les utilitaires mémoire et I/O minimal.
 
 ### Phase 3 — Backend et runtime (2–3 semaines)

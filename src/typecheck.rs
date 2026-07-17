@@ -26,6 +26,20 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
         },
     );
     env.functions.insert(
+        "assert".to_string(),
+        FunctionSignature {
+            params: vec![Type::Bool],
+            return_type: Type::Void,
+        },
+    );
+    env.functions.insert(
+        "panic".to_string(),
+        FunctionSignature {
+            params: vec![],
+            return_type: Type::Void,
+        },
+    );
+    env.functions.insert(
         "memcpy".to_string(),
         FunctionSignature {
             params: vec![
@@ -473,6 +487,19 @@ mod tests {
             "fn main() -> void { let p = alloc(16); let q = realloc(p, 32); memcpy(q, p, 16); memset(q, 0, 8); free(q); }",
         );
         assert!(check(&program, "").is_ok());
+    }
+
+    #[test]
+    fn style_helpers_assert_and_panic_are_available() {
+        let program = parse_program("fn main() -> void { assert(true); panic(); }");
+        assert!(check(&program, "").is_ok());
+    }
+
+    #[test]
+    fn assert_requires_bool_argument() {
+        let program = parse_program("fn main() -> void { assert(42); }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("arg 0 de 'assert' attend bool"));
     }
 }
 

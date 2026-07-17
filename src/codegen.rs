@@ -246,6 +246,56 @@ impl Generator {
         (value, ty)
     }
 
+    fn emit_assert(&mut self, condition: &Expr) -> ValueWithType {
+        let condition = self.emit_expr(condition).0.expect("assert condition without value");
+        let condition_value = condition.into_int_value();
+
+        let abort = self
+            .module_ref()
+            .get_function("abort")
+            .expect("abort non déclaré");
+
+        let current = self
+            .builder_ref()
+            .get_insert_block()
+            .expect("builder position required");
+        let parent = current.get_parent().expect("basic block without parent");
+
+        let fail_bb = self.context_ref().append_basic_block(parent, &self.next_label("assert_fail"));
+        let continue_bb = self
+            .context_ref()
+            .append_basic_block(parent, &self.next_label("assert_continue"));
+        let _ = self
+            .builder_ref()
+            .build_conditional_branch(condition_value, continue_bb, fail_bb);
+
+        self.builder_ref().position_at_end(fail_bb);
+        self.expect(
+            self.builder_ref().build_call(abort, &[], "assert_abort"),
+            "assert abort call",
+        );
+        self.expect(
+            self.builder_ref()
+                .build_unconditional_branch(continue_bb),
+            "assert continue",
+        );
+
+        self.builder_ref().position_at_end(continue_bb);
+        (None, Type::Void)
+    }
+
+    fn emit_panic(&mut self) -> ValueWithType {
+        let abort = self
+            .module_ref()
+            .get_function("abort")
+            .expect("abort non déclaré");
+        self.expect(
+            self.builder_ref().build_call(abort, &[], "panic_abort"),
+            "panic abort call",
+        );
+        (None, Type::Void)
+    }
+
     fn emit_expr(&mut self, expr: &Expr) -> ValueWithType {
         let ty = self.types.get(&expr.id).cloned().unwrap_or(Type::Void);
         match &expr.kind {
@@ -342,6 +392,13 @@ impl Generator {
                 Type::Bool,
             ),
             ExprKind::Call { name, args } => {
+                if name == "assert" {
+                    return self.emit_assert(args.first().expect("assert has no argument"));
+                }
+                if name == "panic" {
+                    return self.emit_panic();
+                }
+
                 let function = self
                     .module_ref()
                     .get_function(name)
@@ -966,6 +1023,9 @@ fn declare_runtime(context: *const Context, module: *const Module<'static>) {
     let realloc_type = i8_ptr_type
         .fn_type(&[i8_ptr_type.into(), i64_type.into()], false);
     let _ = module.add_function("realloc", realloc_type, None);
+
+    let abort_type = context.void_type().fn_type(&[], false);
+    let _ = module.add_function("abort", abort_type, None);
 
     let memcpy_type = i8_ptr_type
         .fn_type(&[i8_ptr_type.into(), i8_ptr_type.into(), i64_type.into()], false);
