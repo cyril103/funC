@@ -414,6 +414,22 @@ fn run_compile(args: CompileArgs) {
         return;
     }
 
+    let has_output_option = args.emit_ast
+        || args.emit_typed
+        || args.emit_ir
+        || args.emit_asm
+        || args.emit_obj
+        || args.emit_exe
+        || args.warn_memory;
+    if !has_output_option {
+        print_simple_diagnostic(
+            DiagnosticCategory::Backend,
+            "Aucune sortie demandée: utilisez --check, --emit-ast, --emit-ir, --emit-asm, --emit-obj ou --emit-exe.",
+        );
+        eprintln!("Astuce: ajoutez --check pour valider parse+typecheck.");
+        return;
+    }
+
     let target_info = match TargetInfo::from_target_arg(&args.target) {
         Ok(target) => target,
         Err(err) => {
