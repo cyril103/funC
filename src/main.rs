@@ -1101,8 +1101,6 @@ fn locate_import_span(
     column: usize,
 ) -> Option<DiagnosticSpan> {
     let keyword_offset = find_keyword_column(line_text, "import").unwrap_or(column);
-    let mut end_line = line;
-    let mut end_column = keyword_offset.max(1);
 
     for current_line in line..=lines.len() {
         let text = lines[current_line - 1];
@@ -1112,8 +1110,8 @@ fn locate_import_span(
             0
         };
         if let Some(pos) = text[start_search..].find(';') {
-            end_line = current_line;
-            end_column = start_search + pos + 1;
+            let end_line = current_line;
+            let end_column = start_search + pos + 1;
             return Some(DiagnosticSpan {
                 start_line: line,
                 start_column: keyword_offset,

@@ -36,7 +36,12 @@
 - [x] Publier une page `Exemples` par domaine (memoire, contrôle, modules, CLI).
 - [x] Rédiger notes de version v1.0 avec limites connues et compatibilité.
 
+### Phase 5 — Qualité post-release (1–2 semaines)
+- [ ] Consolider la qualité d’outil (nettoyage warnings, ergonomie message d’erreur, qualité docs).
+- [ ] Stabiliser la couverture runtime (`runtime` + objets/objets cross-cibles)
+- [ ] Préparer la check-list release v1.1.
+
 ## Indicateur d’avancement
 - Priorité: livrer chaque phase par lot, avec vérification `cargo build` + jeux de tests pertinents par phase.
-- Statut actuel: Phase 4 terminée — suite de régression, migration, exemples et notes de version rédigées; prêt pour gel de release.
+- Statut actuel: Phase 5 en cours — nettoyage warnings actif et préparation de la qualité post-release.
 - Objectif cible: stabiliser avant d’ajouter de nouvelles fonctionnalités de syntaxe.
