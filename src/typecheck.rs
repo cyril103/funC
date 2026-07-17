@@ -58,7 +58,13 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
             }
             fn_env.locals.last_mut().unwrap().insert(
                 param.name.clone(),
-                (param.ty.clone(), false),
+                Symbol {
+                    ty: param.ty.clone(),
+                    mutable: false,
+                    used: false,
+                    line: 0,
+                    column: 0,
+                },
             );
         }
         fn_env.return_type = Some(function.return_type.clone());
@@ -73,6 +79,17 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
                 column: 0,
                 suggestion: Some(
                     "Assurez-vous que toutes les branches retournent le type attendu par la fonction.".to_string(),
+                ),
+            });
+        }
+        if let Some((name, line, column)) = fn_env.first_unused_symbol() {
+            return Err(TypeError {
+                message: format!("la variable '{}' est déclarée mais jamais utilisée", name),
+                line,
+                column,
+                suggestion: Some(
+                    "Supprimez-la ou utilisez-la avant la fin de la fonction pour éviter un avertissement."
+                        .to_string(),
                 ),
             });
         }
@@ -173,14 +190,37 @@ mod tests {
         let err = check(&program, "").unwrap_err();
         assert!(err.message.contains("shadowing"));
     }
+
+    #[test]
+    fn detect_unused_local_variable() {
+        let program = parse_program("fn main() -> i64 { let x = 1; return 0; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("jamais utilisée"));
+    }
+
+    #[test]
+    fn detect_unused_parameter() {
+        let program = parse_program("fn main(x: i64) -> i64 { return 0; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("jamais utilisée"));
+    }
 }
 
 #[derive(Clone)]
 struct TypeEnvironment {
-    locals: Vec<HashMap<String, (Type, bool)>>,
+    locals: Vec<HashMap<String, Symbol>>,
     functions: HashMap<String, FunctionSignature>,
     return_type: Option<Type>,
     saw_return: bool,
+}
+
+#[derive(Clone)]
+struct Symbol {
+    ty: Type,
+    mutable: bool,
+    used: bool,
+    line: usize,
+    column: usize,
 }
 
 impl TypeEnvironment {
@@ -217,16 +257,25 @@ impl TypeEnvironment {
         self.locals.iter().any(|scope| scope.contains_key(name))
     }
 
-    fn define(&mut self, name: String, ty: Type, mutable: bool) {
+    fn define(&mut self, name: String, ty: Type, mutable: bool, line: usize, column: usize) {
         if let Some(scope) = self.locals.last_mut() {
-            scope.insert(name, (ty, mutable));
+            scope.insert(
+                name,
+                Symbol {
+                    ty,
+                    mutable,
+                    used: false,
+                    line,
+                    column,
+                },
+            );
         }
     }
 
     fn resolve(&self, name: &str) -> Option<Type> {
         for scope in self.locals.iter().rev() {
-            if let Some((ty, _)) = scope.get(name) {
-                return Some(ty.clone());
+            if let Some(symbol) = scope.get(name) {
+                return Some(symbol.ty.clone());
             }
         }
         None
@@ -234,8 +283,40 @@ impl TypeEnvironment {
 
     fn resolve_symbol(&self, name: &str) -> Option<(Type, bool)> {
         for scope in self.locals.iter().rev() {
-            if let Some(info) = scope.get(name) {
-                return Some(info.clone());
+            if let Some(symbol) = scope.get(name) {
+                return Some((symbol.ty.clone(), symbol.mutable));
+            }
+        }
+        None
+    }
+
+    fn resolve_symbol_for_use(&mut self, name: &str) -> Option<(Type, bool)> {
+        for scope in self.locals.iter_mut().rev() {
+            if let Some(symbol) = scope.get_mut(name) {
+                symbol.used = true;
+                return Some((symbol.ty.clone(), symbol.mutable));
+            }
+        }
+        None
+    }
+
+    fn first_unused_symbol_in_scope(&self) -> Option<(String, usize, usize)> {
+        if let Some(scope) = self.locals.last() {
+            for (name, symbol) in scope {
+                if !symbol.used {
+                    return Some((name.clone(), symbol.line, symbol.column));
+                }
+            }
+        }
+        None
+    }
+
+    fn first_unused_symbol(&self) -> Option<(String, usize, usize)> {
+        for scope in self.locals.iter() {
+            for (name, symbol) in scope {
+                if !symbol.used {
+                    return Some((name.clone(), symbol.line, symbol.column));
+                }
             }
         }
         None
@@ -252,6 +333,17 @@ fn infer_block(
     env.push_scope();
     for expr in &block.expressions {
         last = infer_expr(expr, env, functions, inferred)?;
+    }
+    if let Some((name, line, column)) = env.first_unused_symbol_in_scope() {
+        return Err(TypeError {
+            message: format!("la variable '{}' est déclarée mais jamais utilisée", name),
+            line,
+            column,
+            suggestion: Some(
+                "Supprimez-la ou utilisez-la avant la fin du bloc pour éviter un avertissement."
+                    .to_string(),
+            ),
+        });
     }
     env.pop_scope();
     Ok(last)
@@ -299,12 +391,18 @@ fn infer_expr(
                 }
             }
             let final_ty = ty.clone().unwrap_or(init_ty);
-            env.define(name.clone(), final_ty.clone(), *mutable);
+            env.define(
+                name.clone(),
+                final_ty.clone(),
+                *mutable,
+                expr.line,
+                expr.column,
+            );
             final_ty
         }
         ExprKind::Assign { name, value } => {
             let rhs_ty = infer_expr(value, env, functions, inferred)?;
-            let (decl_ty, mutable) = env.resolve_symbol(name).ok_or_else(|| TypeError {
+            let (decl_ty, mutable) = env.resolve_symbol_for_use(name).ok_or_else(|| TypeError {
                 message: format!("identifiant '{}' inconnu", name),
                 line: expr.line,
                 column: expr.column,
@@ -511,13 +609,16 @@ fn infer_expr(
         }
         ExprKind::Binary(op, left, right) => infer_binary(*op, left, right, env, functions, inferred)?,
         ExprKind::Identifier(name) => env
-            .resolve(name)
+            .resolve_symbol_for_use(name)
             .ok_or_else(|| TypeError {
                 message: format!("identifiant '{}' inconnu", name),
                 line: expr.line,
                 column: expr.column,
-                suggestion: Some("Déclarez d'abord la variable avec let avant de l'utiliser.".to_string()),
-            })?,
+                suggestion: Some(
+                    "Déclarez d'abord la variable avec let avant de l'utiliser.".to_string(),
+                ),
+            })?
+            .0,
         ExprKind::IntLiteral(_) => Type::I64,
         ExprKind::FloatLiteral(_) => Type::F64,
         ExprKind::BoolLiteral(_) => Type::Bool,

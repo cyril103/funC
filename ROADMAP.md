@@ -45,7 +45,7 @@
 ## 🧠 Objectif 3 — Sémantique forte (8–12 séances)
 1. Table des symboles
    - ✅ Détecter le shadowing involontaire
-   - Détecter les variables non utilisées
+   - ✅ Détecter les variables non utilisées
 2. Vérification de flux
    - Vérifier qu'un bloc `if/else` (et branches) retourne un type cohérent dans toutes les issues
 3. Gestion mémoire
