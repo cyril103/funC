@@ -111,6 +111,24 @@ Comportement:
 - `emit_obj`/`emit_exe` réutilise `llc -mtriple` et `clang -target` (ou `cc` en fallback).
 - Si la chaîne LLVM/Clang ne supporte pas la cible, vous obtenez une erreur explicite.
 
+## 📦 Gestion des imports
+
+Les modules sont chargés via le mot-clé `import` avec une chaîne:
+
+- Syntaxe: `import "chemin";`
+- Exemple: `import "math";`
+
+Résolution:
+- si le chemin est relatif, il est résolu depuis le dossier du fichier appelant;
+- l'extension `.fc` est ajoutée automatiquement si elle n'est pas présente;
+- si le chemin est absolu, il est utilisé tel quel;
+- les imports déjà chargés ne sont pas recompilés (anti-cycle simple via cache interne).
+
+Comportement d'erreur:
+- `Impossible de localiser le module` si le chemin ne peut pas être résolu;
+- `Impossible de lire le module` en cas d'absence de fichier ou de problème d'accès;
+- Les erreurs de lexeur/parser des modules importés remontent avec des diagnostics syntaxiques.
+
 ## ✅ Exemples de validation
 
 - `examples/getting-started/sample_if_else.fc` : valide `if/else` avec retour d'un même type dans chaque branche.

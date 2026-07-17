@@ -16,7 +16,7 @@
 - [x] Harmoniser les erreurs/diagnostics avec codes (catégories): syntaxe, sémantique, backend.
 - [x] Afficher des spans multi-lignes quand c’est utile (`if`, `for`, `import`).
 - [x] Ajouter une commande `funC validate` qui combine parse + typecheck + diagnostics mémoire.
-- [ ] Documenter le comportement `import` (résolution des chemins, erreurs).
+- [x] Documenter le comportement `import` (résolution des chemins, erreurs).
 
 ### Phase 2 — Productivité langage (2–3 semaines)
 - [ ] Élargir le constant folding (comparaisons booléennes et propagation de constantes simples).
