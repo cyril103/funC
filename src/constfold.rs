@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::mem;
 
 use crate::ast::{BinaryOp, Block, Expr, ExprKind, Program};
 
@@ -11,9 +12,23 @@ pub fn fold_program(program: &mut Program) {
 
 fn fold_block(block: &mut Block, scopes: &mut Vec<HashMap<String, ExprKind>>) {
     scopes.push(HashMap::new());
-    for expr in &mut block.expressions {
-        fold_expr(expr, scopes);
+    let expressions = mem::take(&mut block.expressions);
+    let mut optimized = Vec::new();
+    let mut keep_processing = true;
+
+    for expr in expressions {
+        let mut expr = expr;
+        fold_expr(&mut expr, scopes);
+
+        if keep_processing {
+            if matches!(expr.kind, ExprKind::Return(_)) {
+                keep_processing = false;
+            }
+            optimized.push(expr);
+        }
     }
+
+    block.expressions = optimized;
     scopes.pop();
 }
 
@@ -59,6 +74,15 @@ fn fold_expr(expr: &mut Expr, scopes: &mut Vec<HashMap<String, ExprKind>>) {
             if let Some(condition) = condition.as_mut() {
                 fold_expr(condition, scopes);
             }
+            if let Some(condition) = condition.as_ref() {
+                if let ExprKind::BoolLiteral(false) = condition.kind {
+                    expr.kind = ExprKind::Block(Block {
+                        expressions: init.take().map(|expression| vec![*expression]).unwrap_or_default(),
+                    });
+                    return;
+                }
+            }
+
             if let Some(post) = post.as_mut() {
                 fold_expr(post, scopes);
             }
@@ -71,7 +95,13 @@ fn fold_expr(expr: &mut Expr, scopes: &mut Vec<HashMap<String, ExprKind>>) {
         }
         ExprKind::While { condition, body } => {
             fold_expr(condition, scopes);
-            fold_block(body, scopes);
+            if let ExprKind::BoolLiteral(false) = condition.kind {
+                expr.kind = ExprKind::Block(Block {
+                    expressions: Vec::new(),
+                });
+            } else {
+                fold_block(body, scopes);
+            }
         }
         ExprKind::IfElse {
             condition,
@@ -79,6 +109,24 @@ fn fold_expr(expr: &mut Expr, scopes: &mut Vec<HashMap<String, ExprKind>>) {
             else_block,
         } => {
             fold_expr(condition, scopes);
+            if let ExprKind::BoolLiteral(true) = condition.kind {
+                fold_block(then_block, scopes);
+                let then_block = mem::replace(then_block, Block {
+                    expressions: Vec::new(),
+                });
+                expr.kind = ExprKind::Block(then_block);
+                return;
+            }
+
+            if let ExprKind::BoolLiteral(false) = condition.kind {
+                fold_block(else_block, scopes);
+                let else_block = mem::replace(else_block, Block {
+                    expressions: Vec::new(),
+                });
+                expr.kind = ExprKind::Block(else_block);
+                return;
+            }
+
             fold_block(then_block, scopes);
             fold_block(else_block, scopes);
         }
@@ -318,5 +366,52 @@ mod tests {
             _ => panic!("expression de retour inattendue"),
         };
         assert_eq!(return_expr, &crate::ast::ExprKind::BoolLiteral(true));
+    }
+
+    #[test]
+    fn fold_unreachable_if_true_branch() {
+        let mut program = parse_program(
+            "fn main() -> i64 { if true { return 1; } else { return 2; } return 3; }",
+        );
+        fold_program(&mut program);
+
+        let expr = &program.functions[0].body.expressions[0].kind;
+        let then_block = match expr {
+            crate::ast::ExprKind::Block(block) => block,
+            _ => panic!("expression de branchement attendue"),
+        };
+        assert_eq!(then_block.expressions.len(), 1);
+        assert!(matches!(
+            then_block.expressions[0].kind,
+            crate::ast::ExprKind::Return(Some(_))
+        ));
+    }
+
+    #[test]
+    fn fold_while_false_is_removed() {
+        let mut program = parse_program("fn main() -> i64 { while false { return 1; } return 2; }");
+        fold_program(&mut program);
+
+        let expr = &program.functions[0].body.expressions[0].kind;
+        let block = match expr {
+            crate::ast::ExprKind::Block(block) => block,
+            _ => panic!("expression de bloc attendue"),
+        };
+        assert_eq!(block.expressions.len(), 0);
+    }
+
+    #[test]
+    fn fold_for_false_is_dead() {
+        let mut program =
+            parse_program("fn main() -> i64 { for (1 + 2; false; 3 + 4) { return 1; } return 2; }");
+        fold_program(&mut program);
+
+        let expr = &program.functions[0].body.expressions[0].kind;
+        let block = match expr {
+            crate::ast::ExprKind::Block(block) => block,
+            _ => panic!("expression de bloc attendue"),
+        };
+        assert_eq!(block.expressions.len(), 1);
+        assert_eq!(block.expressions[0], crate::ast::ExprKind::IntLiteral(3));
     }
 }
