@@ -150,6 +150,14 @@ impl DiagnosticCategory {
     }
 }
 
+#[derive(Clone, Copy)]
+struct DiagnosticSpan {
+    start_line: usize,
+    start_column: usize,
+    end_line: usize,
+    end_column: usize,
+}
+
 #[derive(Debug)]
 struct TargetInfo {
     triple: String,
@@ -804,6 +812,15 @@ fn print_diagnostic(
     message: &str,
     suggestion: Option<&str>,
 ) {
+    let lines: Vec<&str> = source.lines().collect();
+    let span = infer_diagnostic_span(
+        category,
+        &lines,
+        line,
+        column,
+        message,
+    );
+
     if line == 0 || column == 0 {
         eprintln!("[{}] {}: {message}", category.code(), category.label());
         if let Some(suggestion) = suggestion {
@@ -814,8 +831,47 @@ fn print_diagnostic(
 
     eprintln!("[{}] {} en {line}:{column}: {message}", category.code(), category.label());
 
-    let lines: Vec<&str> = source.lines().collect();
-    if let Some(context) = lines.get(line.saturating_sub(1)) {
+    if let Some(span) = span.filter(|span| span.end_line > span.start_line) {
+        let gutter = span.end_line.to_string().len().max(2);
+        let start_line = span.start_line;
+        let end_line = span.end_line;
+        let end_column = span.end_column;
+        let start_column = span.start_column;
+        let mut displayed = 0usize;
+        let max_lines = (span.end_line.saturating_sub(span.start_line) + 1).min(12);
+        for current_line in start_line..=end_line {
+            if current_line == 0 || current_line > lines.len() || displayed >= max_lines {
+                continue;
+            }
+            let context = lines[current_line - 1];
+            eprintln!("{:>width$} | {}", current_line, context, width = gutter);
+
+            let marker_column = if current_line == start_line && current_line == end_line {
+                Some(start_column)
+            } else if current_line == start_line {
+                Some(start_column)
+            } else if current_line == end_line {
+                Some(end_column)
+            } else {
+                None
+            };
+
+            if let Some(marker) = marker_column {
+                let pointer_offset = marker.saturating_sub(1);
+                eprintln!(
+                    "{:>width$} | {:>pointer$}^",
+                    "",
+                    "",
+                    width = gutter,
+                    pointer = pointer_offset + 1
+                );
+            }
+            displayed = displayed.saturating_add(1);
+        }
+        if span.end_line > start_line + max_lines.saturating_sub(1) {
+            eprintln!("{:>width$} | ...", "", width = gutter);
+        }
+    } else if let Some(context) = lines.get(line.saturating_sub(1)) {
         let gutter = line.to_string().len().max(2);
         let pointer_offset = column.saturating_sub(1);
         eprintln!("{:>width$} | {}", line, context, width = gutter);
@@ -827,9 +883,194 @@ fn print_diagnostic(
             pointer = pointer_offset + 1
         );
     }
+
     if let Some(suggestion) = suggestion {
         eprintln!("  suggestion: {suggestion}");
     }
+}
+
+fn infer_diagnostic_span(
+    category: DiagnosticCategory,
+    lines: &[&str],
+    line: usize,
+    column: usize,
+    message: &str,
+) -> Option<DiagnosticSpan> {
+    if category != DiagnosticCategory::Syntax {
+        return None;
+    }
+
+    if line == 0 || line > lines.len() {
+        return None;
+    }
+
+    let line_text = lines[line - 1];
+    if line_text.trim().is_empty() {
+        return None;
+    }
+
+    if message.contains("import") || line_text.contains("import") {
+        return locate_import_span(lines, line, line_text, column);
+    }
+
+    if message.contains("if") || contains_token(line_text, "if") {
+        return locate_control_span(lines, line, line_text, column, "if");
+    }
+
+    if message.contains("for") || contains_token(line_text, "for") {
+        return locate_control_span(lines, line, line_text, column, "for");
+    }
+
+    None
+}
+
+fn locate_control_span(
+    lines: &[&str],
+    line: usize,
+    line_text: &str,
+    column: usize,
+    keyword: &str,
+) -> Option<DiagnosticSpan> {
+    let keyword_offset = find_keyword_column(line_text, keyword).or(Some(column));
+    let mut depth = 0isize;
+    let mut end_line = line;
+    let mut end_column = column;
+    let mut seen_open = false;
+
+    for (idx, current) in lines[line - 1..].iter().enumerate() {
+        let current_line = line + idx;
+        let text = *current;
+        let start_byte = if idx == 0 {
+            byte_index_after(line_text, keyword_offset.saturating_sub(1))
+        } else {
+            0
+        };
+        let slice = &text[start_byte..];
+        for (offset, ch) in slice.char_indices() {
+            let absolute = start_byte + offset + 1;
+            if ch == '{' {
+                depth += 1;
+                seen_open = true;
+            } else if ch == '}' && depth > 0 {
+                depth -= 1;
+                if seen_open && depth == 0 {
+                    end_line = current_line;
+                    end_column = (start_byte + offset + 1).max(1);
+                    return Some(DiagnosticSpan {
+                        start_line: line,
+                        start_column: keyword_offset,
+                        end_line,
+                        end_column,
+                    });
+                }
+            }
+        }
+    }
+
+    if seen_open && end_line <= line && end_column == column {
+        let final_line = line + 11;
+        let last_line = final_line.min(lines.len());
+        return Some(DiagnosticSpan {
+            start_line: line,
+            start_column: keyword_offset,
+            end_line: last_line,
+            end_column: lines[last_line - 1].len().max(1),
+        });
+    }
+
+    None
+}
+
+fn locate_import_span(
+    lines: &[&str],
+    line: usize,
+    line_text: &str,
+    column: usize,
+) -> Option<DiagnosticSpan> {
+    let keyword_offset = find_keyword_column(line_text, "import").unwrap_or(column);
+    let mut end_line = line;
+    let mut end_column = keyword_offset.max(1);
+
+    for current_line in line..=lines.len() {
+        let text = lines[current_line - 1];
+        let search = text.find(';');
+        let start_search = if current_line == line {
+            byte_index_after(line_text, keyword_offset.saturating_sub(1))
+        } else {
+            0
+        };
+        if let Some(pos) = text[start_search..].find(';') {
+            end_line = current_line;
+            end_column = start_search + pos + 1;
+            return Some(DiagnosticSpan {
+                start_line: line,
+                start_column: keyword_offset,
+                end_line,
+                end_column,
+            });
+        }
+        if current_line - line >= 4 {
+            break;
+        }
+    }
+
+    let end_line = (line + 3).min(lines.len());
+    Some(DiagnosticSpan {
+        start_line: line,
+        start_column: keyword_offset,
+        end_line,
+        end_column: lines[end_line - 1].len().max(1),
+    })
+}
+
+fn contains_token(line: &str, token: &str) -> bool {
+    if let Some(idx) = line.find(token) {
+        is_token_boundary(line, line[..idx].chars().last()) && is_token_boundary(line, line[idx + token.len()..].chars().next())
+    } else {
+        false
+    }
+}
+
+fn is_token_boundary(ch: Option<char>) -> bool {
+    match ch {
+        None => true,
+        Some(c) => {
+            c.is_whitespace()
+                || matches!(c, '(' | ')' | '{' | '}' | ';' | ',' | ':' | '+' | '-' | '*' | '/' | '.' | '[' | ']' | '>' | '<')
+        }
+    }
+}
+
+fn find_keyword_column(line: &str, token: &str) -> Option<usize> {
+    let mut search_offset = 0;
+    while let Some(pos) = line[search_offset..].find(token) {
+        let absolute = search_offset + pos;
+        let before = line[..absolute].chars().last();
+        let after = line[absolute + token.len()..].chars().next();
+        if is_token_boundary(before) && is_token_boundary(after) {
+            return Some(absolute + 1);
+        }
+        search_offset = absolute + token.len();
+    }
+    None
+}
+
+fn byte_index_after(line: &str, column_minus_one: usize) -> usize {
+    if line.is_empty() {
+        return 0;
+    }
+    let mut index = 0;
+    for (idx, (offset, ch)) in line.char_indices().enumerate() {
+        if idx == column_minus_one {
+            return offset;
+        }
+        index = offset + ch.len_utf8();
+        if idx + 1 >= column_minus_one {
+            break;
+        }
+    }
+    let _ = index;
+    line.len()
 }
 
 fn print_simple_diagnostic(category: DiagnosticCategory, message: &str) {
