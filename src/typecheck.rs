@@ -71,10 +71,13 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
         let body_completion = infer_block(&function.body, &mut fn_env, &env.functions, &mut inferred)?;
         let body_ty = body_completion.ty();
         if body_ty != function.return_type {
+            let detail = type_mismatch_detail(&function.return_type, &body_ty)
+                .map(|extra| format!(" ({extra})"))
+                .unwrap_or_default();
             return Err(TypeError {
                 message: format!(
-                    "la fonction '{}' attend un retour '{}', mais le bloc retourne '{}'",
-                    function.name, function.return_type, body_ty
+                    "la fonction '{}' attend un retour '{}', mais le bloc retourne '{}'{}",
+                    function.name, function.return_type, body_ty, detail
                 ),
                 line: 0,
                 column: 0,
@@ -136,6 +139,27 @@ mod tests {
         let program = parse_program("fn main() -> i64 { return true; }");
         let err = check(&program, "").unwrap_err();
         assert!(err.message.contains("return de type"));
+    }
+
+    #[test]
+    fn numeric_width_mismatch_is_reported() {
+        let program = parse_program("fn main() -> i64 { let x: i32 = 1; return x; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("largeurs d'entiers diffèrent"));
+    }
+
+    #[test]
+    fn signedness_mismatch_is_reported() {
+        let program = parse_program("fn copy(x: i32) -> void { let y: u32 = x; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("mélange signé / non signé détecté"));
+    }
+
+    #[test]
+    fn pointer_mismatch_is_reported() {
+        let program = parse_program("fn main() -> void { let p = alloc(1); let x: *i32 = p; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("pointeurs ciblent des types différents"));
     }
 
     #[test]
@@ -416,14 +440,20 @@ fn infer_expr(
             let init_ty = infer_expr(value, env, functions, inferred)?.ty();
             if let Some(ann) = ty {
                 if &init_ty != ann {
+                    let detail = type_mismatch_detail(ann, &init_ty)
+                        .map(|extra| format!(" ({extra})"))
+                        .unwrap_or_default();
                     return Err(TypeError {
                         message: format!(
-                            "mauvaise annotation: la variable '{}' attend {}, trouvé {}",
-                            name, ann, init_ty
+                            "mauvaise annotation: la variable '{}' attend {}, trouvé {}{}",
+                            name, ann, init_ty, detail
                         ),
                         line: expr.line,
                         column: expr.column,
-                        suggestion: Some(format!("Déclarez '{}' avec le type '{}' ou ajustez son initialisation.", name, init_ty).to_string()),
+                        suggestion: Some(format!(
+                            "Déclarez '{}' avec le type '{}' ou ajustez son initialisation.",
+                            name, ann
+                        )),
                     });
                 }
             }
@@ -457,10 +487,13 @@ fn infer_expr(
                 });
             }
             if rhs_ty != decl_ty {
+                let detail = type_mismatch_detail(&decl_ty, &rhs_ty)
+                    .map(|extra| format!(" ({extra})"))
+                    .unwrap_or_default();
                 return Err(TypeError {
                     message: format!(
-                        "affectation incompatible: '{}' attendu '{}', trouvé '{}'",
-                        name, decl_ty, rhs_ty
+                        "affectation incompatible: '{}' attendu '{}', trouvé '{}'{}",
+                        name, decl_ty, rhs_ty, detail
                     ),
                     line: expr.line,
                     column: expr.column,
@@ -478,9 +511,12 @@ fn infer_expr(
             match ptr_ty {
                 Type::Pointer(inner) => {
                     if *inner != value_ty {
+                        let detail = type_mismatch_detail(&Type::Pointer(Box::new((*inner).clone())), &Type::Pointer(Box::new(value_ty.clone())))
+                            .map(|extra| format!(" ({extra})"))
+                            .unwrap_or_default();
                         return Err(TypeError {
                             message: format!(
-                                "type incompatible in store: pointeur vers {}, valeur {}",
+                                "store: le pointeur cible attend un élément '{}', mais reçoit '{}'{detail}",
                                 inner, value_ty
                             ),
                             line: expr.line,
@@ -490,8 +526,17 @@ fn infer_expr(
                     }
                 }
                 _ => {
+                    let detail = type_mismatch_detail(
+                        &Type::Pointer(Box::new(Type::Void)),
+                        &ptr_ty,
+                    )
+                    .map(|extra| format!(" ({extra})"))
+                    .unwrap_or_default();
                     return Err(TypeError {
-                        message: "store attend un pointeur en second argument".to_string(),
+                        message: format!(
+                            "store attend un pointeur en second argument, trouvé {}{detail}",
+                            ptr_ty
+                        ),
                         line: expr.line,
                         column: expr.column,
                         suggestion: Some(
@@ -660,10 +705,13 @@ fn infer_expr(
                 (Some(value), expected) => {
                     let actual = infer_expr(value, env, functions, inferred)?.ty();
                     if actual != expected {
+                        let detail = type_mismatch_detail(&expected, &actual)
+                            .map(|extra| format!(" ({extra})"))
+                            .unwrap_or_default();
                         return Err(TypeError {
                             message: format!(
-                                "return de type '{}' attendu '{}'",
-                                actual, expected
+                                "return de type '{}' attendu '{}'{}",
+                                actual, expected, detail
                             ),
                             line: expr.line,
                             column: expr.column,
@@ -731,10 +779,13 @@ fn infer_expr(
             for (idx, arg) in args.iter().enumerate() {
                     let arg_ty = infer_expr(arg, env, functions, inferred)?.ty();
                 if arg_ty != sig.params[idx] {
+                    let detail = type_mismatch_detail(&sig.params[idx], &arg_ty)
+                        .map(|extra| format!(" ({extra})"))
+                        .unwrap_or_default();
                     return Err(TypeError {
                         message: format!(
-                            "arg {} de '{}' attend {}, trouvé {}",
-                            idx, name, sig.params[idx], arg_ty
+                            "arg {} de '{}' attend {}, trouvé {}{}",
+                            idx, name, sig.params[idx], arg_ty, detail
                         ),
                         line: expr.line,
                         column: expr.column,
@@ -747,8 +798,11 @@ fn infer_expr(
         ExprKind::Alloc(size) => {
             let size_ty = infer_expr(size, env, functions, inferred)?.ty();
             if size_ty != Type::I64 && size_ty != Type::I32 {
+                let detail = type_mismatch_detail(&Type::I64, &size_ty)
+                    .map(|extra| format!(" ({extra})"))
+                    .unwrap_or_default();
                 return Err(TypeError {
-                    message: "alloc attend un entier de taille".to_string(),
+                    message: format!("alloc attend un entier de taille, trouvé {}{detail}", size_ty),
                     line: expr.line,
                     column: expr.column,
                     suggestion: Some(
@@ -763,8 +817,11 @@ fn infer_expr(
             match ptr_ty {
                 Type::Pointer(_) => ExprCompletion::Value(Type::Void),
                 _ => {
+                    let detail = type_mismatch_detail(&Type::Pointer(Box::new(Type::Void)), &ptr_ty)
+                        .map(|extra| format!(" ({extra})"))
+                        .unwrap_or_default();
                     return Err(TypeError {
-                        message: "free attend un pointeur".to_string(),
+                        message: format!("free attend un pointeur, trouvé {}{detail}", ptr_ty),
                         line: expr.line,
                         column: expr.column,
                         suggestion: Some("Passez un pointeur alloué par alloc à free.".to_string()),
@@ -773,11 +830,19 @@ fn infer_expr(
             }
         }
         ExprKind::Load(ptr) => {
-            match infer_expr(ptr, env, functions, inferred)? {
+            let ptr_completion = infer_expr(ptr, env, functions, inferred)?;
+            match ptr_completion {
                 ExprCompletion::Value(Type::Pointer(inner)) => ExprCompletion::Value(*inner),
                 _ => {
+                    let ptr_ty = ptr_completion.ty();
+                    let detail = type_mismatch_detail(
+                        &Type::Pointer(Box::new(Type::Void)),
+                        &ptr_ty,
+                    )
+                    .map(|extra| format!(" ({extra})"))
+                    .unwrap_or_default();
                     return Err(TypeError {
-                        message: "load attend un pointeur".to_string(),
+                        message: format!("load attend un pointeur, trouvé {}{detail}", ptr_ty),
                         line: expr.line,
                         column: expr.column,
                         suggestion: Some("Chargez une valeur depuis un pointeur existant.".to_string()),
@@ -826,8 +891,11 @@ fn infer_expr(
                     ExprCompletion::Value(*inner)
                 }
                 _ => {
+                    let detail = type_mismatch_detail(&Type::Array(Box::new(Type::I64), 0), &array_ty)
+                        .map(|extra| format!(" ({extra})"))
+                        .unwrap_or_default();
                     return Err(TypeError {
-                        message: "indexation attend un tableau".to_string(),
+                        message: format!("indexation attend un tableau, trouvé {}{detail}", array_ty),
                         line: expr.line,
                         column: expr.column,
                         suggestion: Some(
@@ -869,10 +937,13 @@ fn infer_binary(
     let right_ty = infer_expr(right, env, functions, inferred)?.ty();
 
     if left_ty != right_ty {
+        let detail = type_mismatch_detail(&left_ty, &right_ty)
+            .map(|extra| format!(" ({extra})"))
+            .unwrap_or_default();
         return Err(TypeError {
             message: format!(
-                "opération '{}' incompatible entre {} et {}",
-                op, left_ty, right_ty
+                "opération '{}' incompatible entre {} et {}{}",
+                op, left_ty, right_ty, detail
             ),
             line: right.line,
             column: right.column,
@@ -928,6 +999,82 @@ fn infer_binary(
     };
 
     Ok(ty)
+}
+
+fn numeric_profile(ty: &Type) -> Option<(u8, bool)> {
+    match ty {
+        Type::I8 => Some((8, true)),
+        Type::I16 => Some((16, true)),
+        Type::I32 => Some((32, true)),
+        Type::I64 => Some((64, true)),
+        Type::U8 => Some((8, false)),
+        Type::U16 => Some((16, false)),
+        Type::U32 => Some((32, false)),
+        Type::U64 => Some((64, false)),
+        _ => None,
+    }
+}
+
+fn pointer_depth(ty: &Type) -> usize {
+    let mut depth = 0usize;
+    let mut current = ty;
+    while let Type::Pointer(inner) = current {
+        depth += 1;
+        current = inner.as_ref();
+    }
+    depth
+}
+
+fn pointee_type(ty: &Type) -> &Type {
+    let mut current = ty;
+    while let Type::Pointer(inner) = current {
+        current = inner.as_ref();
+    }
+    current
+}
+
+fn type_mismatch_detail(expected: &Type, found: &Type) -> Option<String> {
+    if expected == found {
+        return None;
+    }
+
+    if let (Some((expected_bits, expected_signed)), Some((found_bits, found_signed))) =
+        (numeric_profile(expected), numeric_profile(found))
+    {
+        if expected_bits != found_bits {
+            return Some(format!(
+                "les largeurs d'entiers diffèrent ({expected_bits} bits vs {found_bits} bits)"
+            ));
+        }
+        if expected_signed != found_signed {
+            return Some("mélange signé / non signé détecté".to_string());
+        }
+    }
+
+    match (expected, found) {
+        (Type::Pointer(_), Type::Pointer(_)) => {
+            let expected_depth = pointer_depth(expected);
+            let found_depth = pointer_depth(found);
+            if expected_depth != found_depth {
+                return Some(format!(
+                    "les niveaux de pointeur diffèrent ({expected_depth} vs {found_depth})"
+                ));
+            }
+
+            let expected_pointee = pointee_type(expected);
+            let found_pointee = pointee_type(found);
+            if expected_pointee != found_pointee {
+                return Some(format!(
+                    "les pointeurs ciblent des types différents ({} vs {})",
+                    expected_pointee, found_pointee
+                ));
+            }
+            None
+        }
+        (Type::Pointer(_), _) => Some("un pointeur est attendu ici".to_string()),
+        (_, Type::Pointer(_)) => Some("une valeur non-pointeur est attendue ici".to_string()),
+        _ => None,
+    }
 }
 
 fn size_of_type(ty: &Type) -> Option<i64> {
