@@ -140,3 +140,7 @@ Comportement d'erreur:
 - `examples/loops/loops.fc` : exemples de `while` et `for`.
 - `examples/pointers/pointers.fc` : `alloc`, `store`, `load`, `free`.
 - `examples/cross-target/cross-target.fc` : exemple compact pour valider des builds multi-cibles.
+
+## 🧭 Documentation de migration
+
+- `MIGRATION.md` : guide de migration, vérifications recommandées et points de rupture connus.
