@@ -2,7 +2,7 @@ use std::{fs, path::{Path, PathBuf}, process};
 use std::collections::HashSet;
 use crate::ast::Program;
 
-use clap::{Args, Parser as ClapParser, Subcommand};
+use clap::{Args, Parser as ClapParser, Subcommand, ValueEnum};
 use lexer::Lexer;
 use parser::Parser as FuncParser;
 use inkwell::targets::{InitializationConfig, Target, TargetMachine};
@@ -93,6 +93,22 @@ struct CompileArgs {
     /// Spécifie la cible LLVM (ex: x86_64-pc-windows-msvc, aarch64-unknown-linux-gnu)
     #[arg(long)]
     target: Option<String>,
+
+    /// Profil backend pour les passes LLVM `opt` (`none`, `safe`, `aggressive`)
+    #[arg(long, value_enum, default_value_t = BackendPassProfile::None)]
+    backend_profile: BackendPassProfile,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum BackendPassProfile {
+    /// Désactive les passes agressives `opt` (comportement par défaut)
+    None,
+
+    /// Active un profil léger de transformation (`-O1`)
+    Safe,
+
+    /// Active le profil agressif (`-O3`)
+    Aggressive,
 }
 
 #[derive(Debug, Args)]
@@ -453,59 +469,34 @@ fn run_compile(args: CompileArgs) {
 }
 
 fn emit_asm(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
+    let (ir_path, cleanup_input_path) = materialize_ir_for_backend(ir, args);
+    let (input_path, cleanup_optimized_path) = apply_backend_profile(
+        &ir_path,
+        args.backend_profile,
+    );
+
     let asm_path = args
         .out_asm
         .clone()
         .unwrap_or_else(|| format!("{}.s", default_stem(&args.input)));
 
-    let ir_path = if let Some(path) = args.out.clone() {
-        if args.emit_ir {
-            PathBuf::from(path)
-        } else {
-            let fallback = std::env::temp_dir().join(format!(
-                "func-{}-{}.ll",
-                default_stem(&args.input),
-                process::id()
-            ));
-            if let Err(err) = fs::write(&fallback, ir) {
-                print_simple_diagnostic(
-                    DiagnosticCategory::Backend,
-                    &format!("Échec d'écriture IR temporaire {fallback:?}: {err}"),
-                );
-                process::exit(1);
-            }
-            fallback
-        }
-    } else {
-        let fallback = std::env::temp_dir().join(format!(
-            "func-{}-{}.ll",
-            default_stem(&args.input),
-            process::id()
-        ));
-        if let Err(err) = fs::write(&fallback, ir) {
-            print_simple_diagnostic(
-                DiagnosticCategory::Backend,
-                &format!("Échec d'écriture IR temporaire {fallback:?}: {err}"),
-            );
-            process::exit(1);
-        }
-        fallback
-    };
-
     let mut cmd = process::Command::new("llc");
     cmd.arg("-filetype=asm");
-    if args.debug_info {
-        cmd.arg("-g");
-    }
     cmd.arg("-o");
     cmd.arg(&asm_path);
     cmd.arg(format!("-mtriple={}", target.triple));
-    cmd.arg(&ir_path);
+    cmd.arg(&input_path);
     let status = cmd.status();
 
     match status {
         Ok(exit) if exit.success() => {
             println!("Assembleur écrit dans {asm_path}");
+            if cleanup_input_path {
+                let _ = fs::remove_file(&ir_path);
+            }
+            if cleanup_optimized_path {
+                let _ = fs::remove_file(&input_path);
+            }
             PathBuf::from(asm_path)
         }
         Ok(exit) => {
@@ -525,12 +516,24 @@ fn emit_asm(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
                 &format!("Impossible d'exécuter llc: {err}"),
             );
             eprintln!("Installez LLVM/llc puis relancez.");
+            if cleanup_input_path {
+                let _ = fs::remove_file(&ir_path);
+            }
+            if cleanup_optimized_path {
+                let _ = fs::remove_file(&input_path);
+            }
             process::exit(1);
         }
     }
 }
 
 fn emit_object(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
+    let (ir_path, cleanup_input_path) = materialize_ir_for_backend(ir, args);
+    let (input_path, cleanup_optimized_path) = apply_backend_profile(
+        &ir_path,
+        args.backend_profile,
+    );
+
     let object_path = args
         .out_obj
         .clone()
@@ -540,6 +543,55 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
             format!("{}.{}", stem, extension)
         });
 
+    let mut cmd = process::Command::new("llc");
+    cmd.arg("-filetype=obj");
+    cmd.arg("-o");
+    cmd.arg(&object_path);
+    cmd.arg(format!("-mtriple={}", target.triple));
+    cmd.arg(&input_path);
+    let status = cmd.status();
+
+    match status {
+        Ok(exit) if exit.success() => {
+            println!("Objet écrit dans {object_path}");
+            if cleanup_input_path {
+                let _ = fs::remove_file(&ir_path);
+            }
+            if cleanup_optimized_path {
+                let _ = fs::remove_file(&input_path);
+            }
+        }
+        Ok(exit) => {
+            print_simple_diagnostic(
+                DiagnosticCategory::Backend,
+                &format!("Échec de llc (code de sortie: {exit})"),
+            );
+            eprintln!(
+                "Assurez-vous d'avoir un llvm de niveau compatible avec la cible: {}",
+                target.triple
+            );
+            process::exit(1);
+        }
+        Err(err) => {
+            print_simple_diagnostic(
+                DiagnosticCategory::Backend,
+                &format!("Impossible d'exécuter llc: {err}"),
+            );
+            eprintln!("Installons LLVM/llc (via les paquets de votre système) puis relancez.");
+            if cleanup_input_path {
+                let _ = fs::remove_file(&ir_path);
+            }
+            if cleanup_optimized_path {
+                let _ = fs::remove_file(&input_path);
+            }
+            process::exit(1);
+        }
+    }
+
+    PathBuf::from(object_path)
+}
+
+fn materialize_ir_for_backend(ir: &str, args: &CompileArgs) -> (PathBuf, bool) {
     let ir_path = if let Some(path) = args.out.clone() {
         if args.emit_ir {
             PathBuf::from(path)
@@ -574,47 +626,51 @@ fn emit_object(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
         fallback
     };
 
-    let mut cmd = process::Command::new("llc");
-    cmd.arg("-filetype=obj");
-    if args.debug_info {
-        cmd.arg("-g");
-    }
+    (ir_path.clone(), args.out.is_none() && !args.emit_ir)
+}
+
+fn apply_backend_profile(
+    ir_path: &PathBuf,
+    profile: BackendPassProfile,
+) -> (PathBuf, bool) {
+    let passes = match profile {
+        BackendPassProfile::None => return (ir_path.clone(), false),
+        BackendPassProfile::Safe => "-O1",
+        BackendPassProfile::Aggressive => "-O3",
+    };
+
+    let optimized = std::env::temp_dir().join(format!(
+        "func-optimized-{}-{}.ll",
+        default_stem(ir_path.to_string_lossy().as_ref()),
+        process::id()
+    ));
+
+    let mut cmd = process::Command::new("opt");
+    cmd.arg(passes);
+    cmd.arg("-S");
+    cmd.arg(ir_path);
     cmd.arg("-o");
-    cmd.arg(&object_path);
-    cmd.arg(format!("-mtriple={}", target.triple));
-    cmd.arg(&ir_path);
+    cmd.arg(&optimized);
     let status = cmd.status();
 
     match status {
-        Ok(exit) if exit.success() => {
-            println!("Objet écrit dans {object_path}");
-        }
+        Ok(exit) if exit.success() => (optimized, true),
         Ok(exit) => {
             print_simple_diagnostic(
                 DiagnosticCategory::Backend,
-                &format!("Échec de llc (code de sortie: {exit})"),
-            );
-            eprintln!(
-                "Assurez-vous d'avoir un llvm de niveau compatible avec la cible: {}",
-                target.triple
+                &format!("Échec de opt (code de sortie: {exit})"),
             );
             process::exit(1);
         }
         Err(err) => {
             print_simple_diagnostic(
                 DiagnosticCategory::Backend,
-                &format!("Impossible d'exécuter llc: {err}"),
+                &format!("Impossible d'exécuter opt: {err}"),
             );
-            eprintln!("Installons LLVM/llc (via les paquets de votre système) puis relancez.");
+            eprintln!("Installez LLVM/opt puis relancez.");
             process::exit(1);
         }
     }
-
-    if args.out.is_none() && !args.emit_ir {
-        let _ = fs::remove_file(&ir_path);
-    }
-
-    PathBuf::from(object_path)
 }
 
 fn load_program_from_entry(entry: &str) -> Result<Program, String> {
@@ -731,6 +787,17 @@ fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &TargetInf
     for linker in linkers {
         let mut cmd = process::Command::new(linker);
         cmd.arg(object_path.as_os_str());
+        if args.debug_info {
+            match linker {
+                "clang" | "cc" => {
+                    cmd.arg("-g");
+                }
+                "link" => {
+                    cmd.arg("/DEBUG");
+                }
+                _ => {}
+            }
+        }
         if linker == "clang" {
             cmd.arg("-target");
             cmd.arg(&target.triple);

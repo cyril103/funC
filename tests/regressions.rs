@@ -147,6 +147,48 @@ fn backend_regression_emits_object_for_native_and_compatible_aliases() {
     }
 }
 
+#[test]
+fn backend_regression_respects_backend_pass_profiles() {
+    if !has_command("opt") {
+        println!("Outil LLVM 'opt' indisponible, test des profils backend ignoré.");
+        return;
+    }
+
+    let input = temp_source_file(
+        "backend_profile",
+        "fn main() -> i64 { return 123; }\n",
+    );
+
+    for profile in ["none", "safe", "aggressive"] {
+        let mut output = PathBuf::from(std::env::temp_dir());
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        output.push(format!(
+            "func_regression_backend_profile_{}_{}_{}.o",
+            profile,
+            std::process::id(),
+            nanos
+        ));
+
+        let status = Command::new(env!("CARGO_BIN_EXE_funC"))
+            .args([
+                "compile",
+                "--emit-obj",
+                "--backend-profile",
+                profile,
+                "--out-obj",
+                output.to_str().expect("utf8"),
+                input.to_str().expect("utf8"),
+            ])
+            .status()
+            .expect("run funC");
+        assert!(status.success());
+        assert!(output.exists());
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn integration_regression_linux_build_executable() {
@@ -155,6 +197,52 @@ fn integration_regression_linux_build_executable() {
         "fn main() -> i64 { return 7; }\n",
     );
     build_and_run_executable(&input, Some("x86_64-unknown-linux-gnu"), 7);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn integration_regression_linux_build_executable_with_debug_info() {
+    if !has_command("llc") {
+        println!("llc indisponible, test debug exécutable ignoré.");
+        return;
+    }
+
+    let input = temp_source_file(
+        "integration_linux_exe_debug",
+        "fn main() -> i64 { return 42; }\n",
+    );
+
+    let mut output = PathBuf::from(std::env::temp_dir());
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time")
+        .as_nanos();
+    output.push(format!(
+        "func_regression_exe_debug_{}_{}",
+        std::process::id(),
+        nanos
+    ));
+
+    let status = Command::new(env!("CARGO_BIN_EXE_funC"))
+        .args([
+            "compile",
+            "--emit-exe",
+            "--debug-info",
+            "--out-exe",
+            output.to_str().expect("utf8"),
+            "--target",
+            "x86_64-unknown-linux-gnu",
+            input.to_str().expect("utf8"),
+        ])
+        .status()
+        .expect("run funC");
+    assert!(status.success());
+    assert!(output.exists());
+
+    let run_status = Command::new(&output)
+        .status()
+        .expect("run generated executable");
+    assert_eq!(run_status.code(), Some(42));
 }
 
 #[cfg(target_os = "windows")]
