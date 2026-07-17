@@ -481,3 +481,23 @@ fn runtime_regression_if_else_executable_returns_expected_code() {
 
     build_and_run_executable(&input, Some("x86_64-unknown-linux-gnu"), 10);
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn runtime_regression_executable_with_alias_target() {
+    let input = temp_source_file(
+        "runtime_alias_target",
+        "fn main() -> i64 { if 1 < 2 { return 13; } else { return 0; } }\n",
+    );
+
+    build_and_run_executable(&input, Some("x86_64"), 13);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn runtime_regression_imported_module_executable_returns_expected_code() {
+    let mut input = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    input.push("examples/modules/main.fc");
+
+    build_and_run_executable(&input, Some("x86_64-unknown-linux-gnu"), 42);
+}
