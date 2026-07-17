@@ -6,6 +6,7 @@ use parser::Parser as FuncParser;
 use inkwell::targets::{InitializationConfig, Target, TargetMachine};
 
 mod ast;
+mod constfold;
 mod codegen;
 mod memorycheck;
 mod lexer;
@@ -152,7 +153,7 @@ fn run_compile(args: CompileArgs) {
         }
     };
 
-    let parsed = match FuncParser::new(lexed).parse_program() {
+    let mut parsed = match FuncParser::new(lexed).parse_program() {
         Ok(program) => program,
         Err(err) => {
             print_diagnostic(
@@ -166,6 +167,7 @@ fn run_compile(args: CompileArgs) {
             process::exit(1);
         }
     };
+    constfold::fold_program(&mut parsed);
 
     if args.emit_ast {
         println!("=== AST ===\n{parsed}");

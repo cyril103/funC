@@ -53,7 +53,7 @@
 4. Erreurs de types avancées
    - ✅ Messages plus précis pour incompatibilités (`i32` vs `i64`, signed/unsigned, pointeurs)
 5. Optimisations minimales
-   - Faire du constant folding simple dans l’AST (ex: `2 + 3`, `true && x`, `x || false`)
+   - ✅ Faire du constant folding simple dans l’AST (ex: `2 + 3`, `true && x`, `x || false`)
 
 ## 🧪 Objectif 4 — Outils & ergonomie (12–16 séances)
 1. Commande de formatage
