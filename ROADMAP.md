@@ -9,7 +9,7 @@
 6. ✅ Préparer l’erreur parser/typecheck avec `line:column`, extrait source et suggestion
 7. ✅ Implémenter `funC compile --check` (analyse seule)
 8. ✅ Implémenter `funC asm` via `--emit-asm`
-9. Uniformiser la sortie exécutable avec `--out-exe` sur toutes les cibles
+9. ✅ Uniformiser la sortie exécutable avec `--out-exe` sur toutes les cibles
 
 ## 🧭 Objectif 1 — MVP robuste (2–4 séances)
 1. `if / else` plus riche
@@ -25,7 +25,7 @@
 4. Commande CLI `asm`
    - ✅ Ajouter `--emit-asm` via `llc -filetype=asm`
 5. Cohérence de sortie
-   - Normaliser le nommage des exécutables (`--out-exe`) sur toutes les cibles
+   - ✅ Normaliser le nommage des exécutables (`--out-exe`) sur toutes les cibles
 
 ## 🚀 Objectif 2 — Langage plus expressif (4–8 séances)
 1. Boucles

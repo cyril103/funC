@@ -394,6 +394,7 @@ fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &TargetInf
                 format!("{stem}.{}", target.exe_suffix())
             }
         });
+    let exe_path = normalize_exe_path(exe_path, target);
 
     let mut linkers = Vec::new();
     linkers.push("clang");
@@ -456,6 +457,19 @@ fn default_host_target() -> String {
     } else {
         triple
     }
+}
+
+fn normalize_exe_path(out_exe: String, target: &TargetInfo) -> PathBuf {
+    let mut exe_path = PathBuf::from(out_exe);
+
+    if !target.exe_suffix().is_empty() {
+        let has_extension = exe_path.extension().is_some();
+        if !has_extension {
+            exe_path.set_extension(target.exe_suffix());
+        }
+    }
+
+    exe_path
 }
 
 fn print_diagnostic(
