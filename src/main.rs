@@ -7,6 +7,7 @@ use inkwell::targets::{InitializationConfig, Target, TargetMachine};
 
 mod ast;
 mod codegen;
+mod memorycheck;
 mod lexer;
 mod parser;
 mod token;
@@ -42,6 +43,10 @@ struct CompileArgs {
     /// Analyse seulement: parse + typecheck sans génération d'IR/code
     #[arg(long)]
     check: bool,
+
+    /// Avertit sur les allocations heap potentiellement non libérées (heuristique)
+    #[arg(long)]
+    warn_memory: bool,
 
     /// Affiche l'IR LLVM textuelle dans la sortie standard
     #[arg(long)]
@@ -180,6 +185,25 @@ fn run_compile(args: CompileArgs) {
             process::exit(1);
         }
     };
+
+    if args.warn_memory {
+        let warnings = memorycheck::analyze(&parsed);
+        if warnings.is_empty() {
+            println!("Avertissements mémoire: aucun");
+        } else {
+            println!("Avertissements mémoire (heuristique, non bloquants):");
+            for warning in warnings {
+                print_diagnostic(
+                    &source,
+                    "Avertissement mémoire",
+                    warning.line,
+                    warning.column,
+                    &warning.message,
+                    None,
+                );
+            }
+        }
+    }
 
     if args.emit_typed {
         println!("=== TYPES DÉDUITS ===");
