@@ -71,6 +71,10 @@ pub enum ExprKind {
         name: String,
         args: Vec<Expr>,
     },
+    Index {
+        array: Box<Expr>,
+        index: Box<Expr>,
+    },
     Alloc(Box<Expr>),
     Free(Box<Expr>),
     Load(Box<Expr>),
@@ -300,6 +304,12 @@ impl Expr {
                     arg.format(f, 0)?;
                 }
                 write!(f, ")")?;
+            }
+            ExprKind::Index { array, index } => {
+                array.format(f, 0)?;
+                write!(f, "[")?;
+                index.format(f, 0)?;
+                write!(f, "]")?;
             }
             ExprKind::Alloc(size) => {
                 write!(f, "{}alloc(", pad)?;

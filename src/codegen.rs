@@ -355,6 +355,30 @@ impl Generator {
                 );
                 (Some(loaded), pointee)
             }
+            ExprKind::Index { array, index } => {
+                let (array, array_ty) = self.emit_expr(array);
+                let array_value = array.expect("index needs array value");
+                let index_expr = &index.kind;
+                let index_value = match index_expr {
+                    ExprKind::IntLiteral(idx) => u32::try_from(*idx).unwrap_or_else(|_| {
+                        panic!("index de tableau doit être un entier non négatif")
+                    }),
+                    _ => panic!("index de tableau attend un entier constant"),
+                };
+
+                match array_ty {
+                    Type::Array(inner, _len) => {
+                        let array_value = array_value.into_array_value();
+                        let loaded = self.expect(
+                            self.builder_ref()
+                                .build_extract_value(array_value, index_value, "index"),
+                            "index",
+                        );
+                        (Some(loaded), *inner)
+                    }
+                    _ => panic!("indexation non supportée pour ce type"),
+                }
+            }
             ExprKind::SizeOf(ty) => (
                 Some(
                     self.context_ref()

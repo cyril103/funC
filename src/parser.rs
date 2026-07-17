@@ -410,6 +410,7 @@ impl Parser {
     }
 
     fn parse_postfix(&mut self) -> Result<Expr, ParseError> {
+        let (start_line, start_column) = self.current_position();
         match self.current_kind() {
             Some(TokenKind::IntLiteral(_)) => {
                 let tok = self.bump().unwrap();
@@ -495,7 +496,22 @@ impl Parser {
                 line: self.current_line(),
                 column: self.current_column(),
             }),
-        }
+        }.and_then(|mut expr| {
+            while self.check(TokenKind::LBracket) {
+                self.bump();
+                let index = self.parse_expression(0)?;
+                self.expect(TokenKind::RBracket)?;
+                expr = self.expr_at(
+                    start_line,
+                    start_column,
+                    ExprKind::Index {
+                        array: Box::new(expr),
+                        index: Box::new(index),
+                    },
+                );
+            }
+            Ok(expr)
+        })
     }
 
     fn binary_meta(kind: Option<&TokenKind>) -> Option<(BinaryOp, u8, bool)> {
@@ -872,6 +888,28 @@ mod tests {
                 assert_eq!(inner.as_ref(), &Type::I64);
             }
             _ => panic!("type de paramètre attendu en tableau"),
+        }
+    }
+
+    #[test]
+    fn parse_array_index() {
+        let source = "fn main(values: [i64; 4]) -> i64 { return values[2]; }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let return_expr = &program.functions[0].body.expressions[0];
+        match &return_expr.kind {
+            ExprKind::Return(expr) => match expr {
+                Some(expr) => match &expr.kind {
+                    ExprKind::Index { array, index } => {
+                        assert!(matches!(array.kind, ExprKind::Identifier(_)));
+                        assert!(matches!(index.kind, ExprKind::IntLiteral(2)));
+                    }
+                    _ => panic!("attendu un indexage dans le return"),
+                },
+                None => panic!("return sans valeur"),
+            },
+            _ => panic!("première expression doit être return"),
         }
     }
 }

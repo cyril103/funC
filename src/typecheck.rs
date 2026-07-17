@@ -125,6 +125,26 @@ mod tests {
         let program = parse_program("fn main() -> i64 { sizeof([i64; 4]) }");
         assert!(check(&program, "").is_ok());
     }
+
+    #[test]
+    fn array_index_is_valid_with_integer_literal() {
+        let program = parse_program("fn main(values: [i64; 4]) -> i64 { return values[2]; }");
+        assert!(check(&program, "").is_ok());
+    }
+
+    #[test]
+    fn array_index_rejects_non_integer_index() {
+        let program = parse_program("fn main(values: [i64; 4]) -> i64 { return values[true]; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("indexation attend un type entier"));
+    }
+
+    #[test]
+    fn array_index_out_of_bounds_rejects() {
+        let program = parse_program("fn main(values: [i64; 2]) -> i64 { return values[3]; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("hors limites"));
+    }
 }
 
 #[derive(Clone)]
@@ -528,6 +548,58 @@ fn infer_expr(
                         line: expr.line,
                         column: expr.column,
                         suggestion: Some("Chargez une valeur depuis un pointeur existant.".to_string()),
+                    });
+                }
+            }
+        }
+        ExprKind::Index { array, index } => {
+            let array_ty = infer_expr(array, env, functions, inferred)?;
+            let index_ty = infer_expr(index, env, functions, inferred)?;
+            if !index_ty.is_integer() {
+                return Err(TypeError {
+                    message: format!("indexation attend un type entier, trouvé {}", index_ty),
+                    line: expr.line,
+                    column: expr.column,
+                    suggestion: Some("Utilisez un indice de type entier pour accéder à un tableau.".to_string()),
+                });
+            }
+            match array_ty {
+                Type::Array(inner, len) => {
+                    if let ExprKind::IntLiteral(index_literal) = &index.kind {
+                        if *index_literal < 0 {
+                            return Err(TypeError {
+                                message: "indexation négative interdite".to_string(),
+                                line: index.line,
+                                column: index.column,
+                                suggestion: Some(
+                                    "Utilisez un indice non négatif.".to_string(),
+                                ),
+                            });
+                        }
+                        if let Ok(index) = usize::try_from(*index_literal) {
+                            if index >= len {
+                                return Err(TypeError {
+                                    message: "index hors limites du tableau".to_string(),
+                                    line: index.line,
+                                    column: index.column,
+                                    suggestion: Some(format!(
+                                        "Utilisez un indice entre 0 et {}.",
+                                        len.saturating_sub(1)
+                                    )),
+                                });
+                            }
+                        }
+                    }
+                    *inner
+                }
+                _ => {
+                    return Err(TypeError {
+                        message: "indexation attend un tableau".to_string(),
+                        line: expr.line,
+                        column: expr.column,
+                        suggestion: Some(
+                            "Indexez un tableau de la forme `[T; N]`.".to_string(),
+                        ),
                     });
                 }
             }
