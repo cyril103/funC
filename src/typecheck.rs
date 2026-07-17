@@ -98,6 +98,27 @@ mod tests {
         let err = check(&program, "").unwrap_err();
         assert!(err.message.contains("fonction 'foo' inconnue"));
     }
+
+    #[test]
+    fn function_return_type_mismatch() {
+        let program = parse_program("fn main() -> i64 { return true; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("return de type"));
+    }
+
+    #[test]
+    fn function_missing_non_void_return() {
+        let program = parse_program("fn main() -> i64 { let x = 1; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("attend un retour"));
+    }
+
+    #[test]
+    fn function_void_return_with_value() {
+        let program = parse_program("fn main() -> void { return 1; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("return avec une valeur"));
+    }
 }
 
 #[derive(Clone)]

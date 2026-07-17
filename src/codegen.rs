@@ -160,6 +160,10 @@ impl Generator {
         let mut value = None;
         let mut ty = Type::Void;
         for expr in &block.expressions {
+            if matches!(expr.kind, ExprKind::Return(_)) {
+                let current = self.emit_expr(expr);
+                return (current.0, current.1);
+            }
             let current = self.emit_expr(expr);
             if current.0.is_some() {
                 value = current.0;

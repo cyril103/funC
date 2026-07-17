@@ -37,7 +37,7 @@
    - ✅ Introduire `let mut`
 4. Fonctions
    - ✅ Améliorer la robustesse des appels
-   - Vérification stricte du type de retour et de l'arité
+   - ✅ Vérification stricte du type de retour et de l'arité
 5. Collections de base
    - Ajouter les tableaux statiques `[T; N]`
    - Ajouter l'indexation `arr[i]`
