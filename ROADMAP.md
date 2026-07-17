@@ -10,7 +10,7 @@
 ### Phase 0 — Fiabilisation (1 semaine)
 - [x] Stabiliser la sémantique de `size_of` (support complet pour les types composés).
 - [x] Finaliser la couverture de types pour l’IR (struct/enum/array).
-- [ ] Ajouter des tests d’intégration « source -> exécutable » pour Linux/Windows.
+- [x] Ajouter des tests d’intégration « source -> exécutable » pour Linux/Windows.
 
 ### Phase 1 — UX compilateur (2 semaines)
 - [ ] Harmoniser les erreurs/diagnostics avec codes (catégories): syntaxe, sémantique, backend.

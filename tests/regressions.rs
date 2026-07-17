@@ -19,6 +19,55 @@ fn temp_source_file(name: &str, contents: &str) -> PathBuf {
     path
 }
 
+fn has_command(command: &str) -> bool {
+    Command::new(command)
+        .arg("--version")
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn build_and_run_executable(input: &PathBuf, target: Option<&str>, expected_code: i32) {
+    if !has_command("clang") && !has_command("cc") {
+        return;
+    }
+
+    let mut output = PathBuf::from(std::env::temp_dir());
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time")
+        .as_nanos();
+    output.push(format!(
+        "func_regression_exe_{}_{}",
+        std::process::id(),
+        nanos
+    ));
+
+    let mut args: Vec<String> = vec![
+        "compile".to_string(),
+        "--emit-exe".to_string(),
+        "--out".to_string(),
+        output.to_str().expect("utf8").to_string(),
+        input.to_str().expect("utf8").to_string(),
+    ];
+    if let Some(target) = target {
+        args.push("--target".to_string());
+        args.push(target.to_string());
+    }
+
+    let status = Command::new(env!("CARGO_BIN_EXE_funC"))
+        .args(args)
+        .status()
+        .expect("run funC");
+    assert!(status.success());
+    assert!(output.exists());
+
+    let run_status = Command::new(output)
+        .status()
+        .expect("run generated executable");
+    assert_eq!(run_status.code(), Some(expected_code));
+}
+
 #[test]
 fn parser_regression_rejects_syntax_error() {
     let input = temp_source_file(
@@ -32,6 +81,26 @@ fn parser_regression_rejects_syntax_error() {
         .expect("run funC");
 
     assert!(!status.success());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn integration_regression_linux_build_executable() {
+    let input = temp_source_file(
+        "integration_linux_exe",
+        "fn main() -> i64 { return 7; }\n",
+    );
+    build_and_run_executable(&input, Some("x86_64-unknown-linux-gnu"), 7);
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn integration_regression_windows_build_executable() {
+    let input = temp_source_file(
+        "integration_windows_exe",
+        "fn main() -> i64 { return 9; }\n",
+    );
+    build_and_run_executable(&input, Some("x86_64-pc-windows-msvc"), 9);
 }
 
 #[test]
