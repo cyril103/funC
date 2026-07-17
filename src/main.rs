@@ -47,9 +47,17 @@ struct CompileArgs {
     #[arg(long)]
     emit_ir: bool,
 
+    /// Génère l'assembleur natif via llc (-filetype=asm)
+    #[arg(long)]
+    emit_asm: bool,
+
     /// Écrit l'IR LLVM textuelle dans un fichier .ll
     #[arg(short, long)]
     out: Option<String>,
+
+    /// Écrit l'assembleur dans un fichier .s (active --emit-asm)
+    #[arg(long)]
+    out_asm: Option<String>,
 
     /// Compile l'IR LLVM textuelle vers un objet (.o ou .obj selon la cible)
     #[arg(long)]
@@ -181,8 +189,8 @@ fn run_compile(args: CompileArgs) {
     }
 
     if args.check {
-        if args.emit_ir || args.emit_obj || args.emit_exe {
-            eprintln!("`--check` ignore l'option de génération backend: aucun IR/objet/exécutable produit.");
+        if args.emit_ir || args.emit_asm || args.emit_obj || args.emit_exe {
+            eprintln!("`--check` ignore les options de génération backend: aucun IR/objet/exécutable/asm produit.");
         }
         println!("Compilation check OK: {}", args.input);
         return;
@@ -196,7 +204,7 @@ fn run_compile(args: CompileArgs) {
         }
     };
 
-    if args.emit_ir || args.emit_obj || args.emit_exe {
+    if args.emit_ir || args.emit_asm || args.emit_obj || args.emit_exe {
         println!("Target: {}", target_info.triple);
         let ir = codegen::generate(&parsed, &types);
 
@@ -211,6 +219,12 @@ fn run_compile(args: CompileArgs) {
                 println!("=== IR ===\n{ir}");
             }
         }
+
+        let asm_path = if args.emit_asm {
+            Some(emit_asm(&ir, &args, &target_info))
+        } else {
+            None
+        };
 
         let object_path = if args.emit_obj || args.emit_exe {
             Some(emit_object(&ir, &args, &target_info))
@@ -229,6 +243,69 @@ fn run_compile(args: CompileArgs) {
                 Some(obj) => link_executable(&obj, &args, &target_info),
                 None => process::exit(1),
             }
+        }
+    }
+}
+
+fn emit_asm(ir: &str, args: &CompileArgs, target: &TargetInfo) -> PathBuf {
+    let asm_path = args
+        .out_asm
+        .clone()
+        .unwrap_or_else(|| format!("{}.s", default_stem(&args.input)));
+
+    let ir_path = if let Some(path) = args.out.clone() {
+        if args.emit_ir {
+            PathBuf::from(path)
+        } else {
+            let fallback = std::env::temp_dir().join(format!(
+                "func-{}-{}.ll",
+                default_stem(&args.input),
+                process::id()
+            ));
+            if let Err(err) = fs::write(&fallback, ir) {
+                eprintln!("Échec d'écriture IR temporaire {fallback:?}: {err}");
+                process::exit(1);
+            }
+            fallback
+        }
+    } else {
+        let fallback = std::env::temp_dir().join(format!(
+            "func-{}-{}.ll",
+            default_stem(&args.input),
+            process::id()
+        ));
+        if let Err(err) = fs::write(&fallback, ir) {
+            eprintln!("Échec d'écriture IR temporaire {fallback:?}: {err}");
+            process::exit(1);
+        }
+        fallback
+    };
+
+    let mut cmd = process::Command::new("llc");
+    cmd.arg("-filetype=asm");
+    cmd.arg("-o");
+    cmd.arg(&asm_path);
+    cmd.arg(format!("-mtriple={}", target.triple));
+    cmd.arg(&ir_path);
+    let status = cmd.status();
+
+    match status {
+        Ok(exit) if exit.success() => {
+            println!("Assembleur écrit dans {asm_path}");
+            PathBuf::from(asm_path)
+        }
+        Ok(exit) => {
+            eprintln!("Échec de llc en mode assembleur (code de sortie: {exit})");
+            eprintln!(
+                "Assurez-vous d'avoir un llvm de niveau compatible avec la cible: {}",
+                target.triple
+            );
+            process::exit(1);
+        }
+        Err(err) => {
+            eprintln!("Impossible d'exécuter llc: {err}");
+            eprintln!("Installez LLVM/llc puis relancez.");
+            process::exit(1);
         }
     }
 }
