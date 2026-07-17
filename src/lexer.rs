@@ -84,6 +84,14 @@ impl Lexer {
                     self.bump();
                     TokenKind::Comma
                 }
+                '[' => {
+                    self.bump();
+                    TokenKind::LBracket
+                }
+                ']' => {
+                    self.bump();
+                    TokenKind::RBracket
+                }
                 '=' => {
                     self.bump();
                     if self.match_next('=') {
@@ -361,6 +369,16 @@ mod tests_legacy {
         assert_eq!(tokens[0].kind, TokenKind::Let);
         assert_eq!(tokens[1].kind, TokenKind::Mut);
         assert_eq!(tokens[2].kind, TokenKind::Identifier("x".to_string()));
+    }
+
+    #[test]
+    fn lex_array_type_tokens() {
+        let tokens = Lexer::new("[i64; 4]").tokenize().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::LBracket);
+        assert_eq!(tokens[1].kind, TokenKind::I64);
+        assert_eq!(tokens[2].kind, TokenKind::Semi);
+        assert_eq!(tokens[3].kind, TokenKind::IntLiteral(4));
+        assert_eq!(tokens[4].kind, TokenKind::RBracket);
     }
 }
 

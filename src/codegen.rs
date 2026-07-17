@@ -91,6 +91,12 @@ impl Generator {
             Type::U64 => context.i64_type().as_basic_type_enum(),
             Type::F32 => context.f32_type().as_basic_type_enum(),
             Type::F64 => context.f64_type().as_basic_type_enum(),
+            Type::Array(inner, len) => context
+                .array_type(
+                    self.llvm_type(inner).unwrap_or(self.i8_ptr_type().as_basic_type_enum()),
+                    (*len).try_into().unwrap_or(0),
+                )
+                .as_basic_type_enum(),
             Type::Pointer(_) => self.i8_ptr_type().as_basic_type_enum(),
         };
         Some(unsafe {
@@ -784,6 +790,7 @@ impl Generator {
             Type::I32 | Type::U32 | Type::F32 => 4,
             Type::I64 | Type::U64 | Type::F64 => 8,
             Type::Pointer(_) => 8,
+            Type::Array(inner, len) => (*len as i64) * self.size_of_type(inner),
         }
     }
 
@@ -802,6 +809,10 @@ impl Generator {
             Type::F32 => Some(context.f32_type().const_zero().as_basic_value_enum()),
             Type::F64 => Some(context.f64_type().const_zero().as_basic_value_enum()),
             Type::Pointer(_) => Some(self.i8_ptr_type().const_zero().as_basic_value_enum()),
+            Type::Array(inner, len) => {
+                let inner_ty = self.llvm_type(inner)?;
+                Some(inner_ty.array_type((*len).try_into().ok()?).const_zero().as_basic_value_enum())
+            }
             Type::Void => None,
         };
         value

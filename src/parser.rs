@@ -68,56 +68,85 @@ impl Parser {
             ptr_depth += 1;
         }
 
-        let mut base = match self.bump() {
-            Some(Token {
-                kind: TokenKind::I8, ..
-            }) => Type::I8,
-            Some(Token {
-                kind: TokenKind::I16, ..
-            }) => Type::I16,
-            Some(Token {
-                kind: TokenKind::I32, ..
-            }) => Type::I32,
-            Some(Token {
-                kind: TokenKind::I64, ..
-            }) => Type::I64,
-            Some(Token {
-                kind: TokenKind::U8, ..
-            }) => Type::U8,
-            Some(Token {
-                kind: TokenKind::U16, ..
-            }) => Type::U16,
-            Some(Token {
-                kind: TokenKind::U32, ..
-            }) => Type::U32,
-            Some(Token {
-                kind: TokenKind::U64, ..
-            }) => Type::U64,
-            Some(Token {
-                kind: TokenKind::F32, ..
-            }) => Type::F32,
-            Some(Token {
-                kind: TokenKind::F64, ..
-            }) => Type::F64,
-            Some(Token {
-                kind: TokenKind::Bool, ..
-            }) => Type::Bool,
-            Some(Token {
-                kind: TokenKind::Void, ..
-            }) => Type::Void,
-            Some(tok) => {
-                return Err(ParseError {
-                    message: format!("type inattendu {:?}", tok.kind),
-                    line: tok.line,
-                    column: tok.column,
-                });
-            }
-            None => {
-                return Err(ParseError {
-                    message: "fin inattendue lors de la lecture d'un type".to_string(),
-                    line: 0,
-                    column: 0,
-                });
+        let mut base = if self.check(TokenKind::LBracket) {
+            self.bump();
+            let inner = self.parse_type()?;
+            self.expect(TokenKind::Semi)?;
+            let len_tok = self.bump().ok_or_else(|| ParseError {
+                message: "longueur de tableau attendue".to_string(),
+                line: self.current_line(),
+                column: self.current_column(),
+            })?;
+            let len = match len_tok {
+                Token {
+                    kind: TokenKind::IntLiteral(len), ..
+                } => usize::try_from(len).map_err(|_| ParseError {
+                    message: "longueur de tableau invalide".to_string(),
+                    line: len_tok.line,
+                    column: len_tok.column,
+                })?,
+                token => {
+                    return Err(ParseError {
+                        message: format!("longueur de tableau attendue, trouvé {:?}", token.kind),
+                        line: token.line,
+                        column: token.column,
+                    });
+                }
+            };
+            self.expect(TokenKind::RBracket)?;
+            Type::Array(Box::new(inner), len)
+        } else {
+            match self.bump() {
+                Some(Token {
+                    kind: TokenKind::I8, ..
+                }) => Type::I8,
+                Some(Token {
+                    kind: TokenKind::I16, ..
+                }) => Type::I16,
+                Some(Token {
+                    kind: TokenKind::I32, ..
+                }) => Type::I32,
+                Some(Token {
+                    kind: TokenKind::I64, ..
+                }) => Type::I64,
+                Some(Token {
+                    kind: TokenKind::U8, ..
+                }) => Type::U8,
+                Some(Token {
+                    kind: TokenKind::U16, ..
+                }) => Type::U16,
+                Some(Token {
+                    kind: TokenKind::U32, ..
+                }) => Type::U32,
+                Some(Token {
+                    kind: TokenKind::U64, ..
+                }) => Type::U64,
+                Some(Token {
+                    kind: TokenKind::F32, ..
+                }) => Type::F32,
+                Some(Token {
+                    kind: TokenKind::F64, ..
+                }) => Type::F64,
+                Some(Token {
+                    kind: TokenKind::Bool, ..
+                }) => Type::Bool,
+                Some(Token {
+                    kind: TokenKind::Void, ..
+                }) => Type::Void,
+                Some(tok) => {
+                    return Err(ParseError {
+                        message: format!("type inattendu {:?}", tok.kind),
+                        line: tok.line,
+                        column: tok.column,
+                    });
+                }
+                None => {
+                    return Err(ParseError {
+                        message: "fin inattendue lors de la lecture d'un type".to_string(),
+                        line: 0,
+                        column: 0,
+                    });
+                }
             }
         };
 
@@ -827,6 +856,22 @@ mod tests {
         match &program.functions[0].body.expressions[1].kind {
             ExprKind::Assign { name, .. } => assert_eq!(name, "x"),
             _ => panic!("assignment attendue"),
+        }
+    }
+
+    #[test]
+    fn parse_array_type_in_parameters() {
+        let source = "fn main(values: [i64; 4]) -> void { 0 }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let func = &program.functions[0];
+        match &func.params[0].ty {
+            Type::Array(inner, len) => {
+                assert_eq!(*len, 4);
+                assert_eq!(inner.as_ref(), &Type::I64);
+            }
+            _ => panic!("type de paramètre attendu en tableau"),
         }
     }
 }

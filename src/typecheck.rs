@@ -119,6 +119,12 @@ mod tests {
         let err = check(&program, "").unwrap_err();
         assert!(err.message.contains("return avec une valeur"));
     }
+
+    #[test]
+    fn sizeof_array_type_is_valid() {
+        let program = parse_program("fn main() -> i64 { sizeof([i64; 4]) }");
+        assert!(check(&program, "").is_ok());
+    }
 }
 
 #[derive(Clone)]
@@ -628,6 +634,9 @@ fn size_of_type(ty: &Type) -> Option<i64> {
         Type::I32 | Type::U32 | Type::F32 => Some(4),
         Type::I64 | Type::U64 | Type::F64 => Some(8),
         Type::Pointer(_) => Some(8),
+        Type::Array(inner, len) => {
+            size_of_type(inner).and_then(|inner_size| inner_size.checked_mul(*len as i64))
+        }
     }
 }
 

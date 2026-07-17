@@ -109,6 +109,7 @@ pub enum Type {
     U64,
     F32,
     F64,
+    Array(Box<Type>, usize),
     Pointer(Box<Type>),
 }
 
@@ -148,6 +149,7 @@ impl fmt::Display for Type {
             Type::U64 => write!(f, "u64"),
             Type::F32 => write!(f, "f32"),
             Type::F64 => write!(f, "f64"),
+            Type::Array(inner, len) => write!(f, "[{}; {}]", inner, len),
             Type::Pointer(inner) => write!(f, "*{}", inner),
         }
     }

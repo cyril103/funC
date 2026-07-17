@@ -39,7 +39,7 @@
    - ✅ Améliorer la robustesse des appels
    - ✅ Vérification stricte du type de retour et de l'arité
 5. Collections de base
-   - Ajouter les tableaux statiques `[T; N]`
+   - ✅ Ajouter les tableaux statiques `[T; N]`
    - Ajouter l'indexation `arr[i]`
 
 ## 🧠 Objectif 3 — Sémantique forte (8–12 séances)
