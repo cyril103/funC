@@ -19,7 +19,7 @@
 - [x] Documenter le comportement `import` (résolution des chemins, erreurs).
 
 ### Phase 2 — Productivité langage (2–3 semaines)
-- [ ] Élargir le constant folding (comparaisons booléennes et propagation de constantes simples).
+- [x] Élargir le constant folding (comparaisons booléennes et propagation de constantes simples).
 - [ ] Optimisations locales sûres (élimination de code mort local / branchements inutiles).
 - [ ] Ajouter des helpers de style (`assert`, `panic` minimal) au niveau bibliothèque standard.
 - [ ] Définir une mini-std (`func::`) pour les utilitaires mémoire et I/O minimal.

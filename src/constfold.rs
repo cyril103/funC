@@ -1,26 +1,52 @@
+use std::collections::HashMap;
+
 use crate::ast::{BinaryOp, Block, Expr, ExprKind, Program};
 
 pub fn fold_program(program: &mut Program) {
     for function in &mut program.functions {
-        fold_block(&mut function.body);
+        let mut scopes: Vec<HashMap<String, ExprKind>> = Vec::new();
+        fold_block(&mut function.body, &mut scopes);
     }
 }
 
-fn fold_block(block: &mut Block) {
+fn fold_block(block: &mut Block, scopes: &mut Vec<HashMap<String, ExprKind>>) {
+    scopes.push(HashMap::new());
     for expr in &mut block.expressions {
-        fold_expr(expr);
+        fold_expr(expr, scopes);
     }
+    scopes.pop();
 }
 
-fn fold_expr(expr: &mut Expr) {
+fn fold_expr(expr: &mut Expr, scopes: &mut Vec<HashMap<String, ExprKind>>) {
     match &mut expr.kind {
-        ExprKind::Let { value, .. } => fold_expr(value),
-        ExprKind::Assign { value, .. } => fold_expr(value),
-        ExprKind::Store(value, ptr) => {
-            fold_expr(value);
-            fold_expr(ptr);
+        ExprKind::Let {
+            name,
+            value,
+            mutable,
+            ..
+        } => {
+            fold_expr(value, scopes);
+            if *mutable {
+                if let Some(scope_index) = index_of_binding(scopes, name) {
+                    scopes[scope_index].remove(name);
+                }
+            } else if let Some(constant) = infer_constant(&value.kind) {
+                if let Some(scope) = scopes.last_mut() {
+                    scope.insert(name.clone(), constant);
+                }
+            }
         }
-        ExprKind::Free(ptr) => fold_expr(ptr),
+        ExprKind::Assign { name, value } => {
+            fold_expr(value, scopes);
+            if let Some(scope_index) = index_of_binding(scopes, name) {
+                scopes[scope_index].remove(name);
+            }
+        }
+        ExprKind::Store(value, ptr) => {
+            fold_expr(value, scopes);
+            fold_expr(ptr, scopes);
+        }
+        ExprKind::Free(ptr) => fold_expr(ptr, scopes),
         ExprKind::For {
             init,
             condition,
@@ -28,65 +54,90 @@ fn fold_expr(expr: &mut Expr) {
             body,
         } => {
             if let Some(init) = init.as_mut() {
-                fold_expr(init);
+                fold_expr(init, scopes);
             }
             if let Some(condition) = condition.as_mut() {
-                fold_expr(condition);
+                fold_expr(condition, scopes);
             }
             if let Some(post) = post.as_mut() {
-                fold_expr(post);
+                fold_expr(post, scopes);
             }
-            fold_block(body);
+            fold_block(body, scopes);
         }
         ExprKind::Return(value) => {
             if let Some(value) = value.as_mut() {
-                fold_expr(value);
+                fold_expr(value, scopes);
             }
         }
         ExprKind::While { condition, body } => {
-            fold_expr(condition);
-            fold_block(body);
+            fold_expr(condition, scopes);
+            fold_block(body, scopes);
         }
         ExprKind::IfElse {
             condition,
             then_block,
             else_block,
         } => {
-            fold_expr(condition);
-            fold_block(then_block);
-            fold_block(else_block);
+            fold_expr(condition, scopes);
+            fold_block(then_block, scopes);
+            fold_block(else_block, scopes);
         }
         ExprKind::Not(expr) => {
-            fold_expr(expr);
+            fold_expr(expr, scopes);
             if let ExprKind::BoolLiteral(value) = expr.kind {
                 expr.kind = ExprKind::BoolLiteral(!value);
             }
         }
         ExprKind::Binary(op, left, right) => {
-            fold_expr(left);
-            fold_expr(right);
+            fold_expr(left, scopes);
+            fold_expr(right, scopes);
 
             if let Some(folded) = fold_binary(*op, &left.kind, &right.kind) {
                 expr.kind = folded;
             }
         }
-        ExprKind::Load(ptr) => fold_expr(ptr),
+        ExprKind::Load(ptr) => fold_expr(ptr, scopes),
         ExprKind::Index { array, index } => {
-            fold_expr(array);
-            fold_expr(index);
+            fold_expr(array, scopes);
+            fold_expr(index, scopes);
         }
-        ExprKind::Alloc(size) => fold_expr(size),
+        ExprKind::Alloc(size) => fold_expr(size, scopes),
         ExprKind::Call { args, .. } => {
             for arg in args.iter_mut() {
-                fold_expr(arg);
+                fold_expr(arg, scopes);
             }
         }
-        ExprKind::Block(block) => fold_block(block),
-        ExprKind::Identifier(_)
-        | ExprKind::IntLiteral(_)
+        ExprKind::Block(block) => fold_block(block, scopes),
+        ExprKind::Identifier(name) => {
+            if let Some(constant) = lookup_constant(scopes, name) {
+                expr.kind = constant;
+            }
+        }
+        ExprKind::IntLiteral(_)
         | ExprKind::FloatLiteral(_)
         | ExprKind::BoolLiteral(_)
         | ExprKind::SizeOf(_) => {}
+    }
+}
+
+fn index_of_binding(scopes: &[HashMap<String, ExprKind>], name: &str) -> Option<usize> {
+    scopes.iter().rposition(|scope| scope.contains_key(name))
+}
+
+fn lookup_constant(scopes: &[HashMap<String, ExprKind>], name: &str) -> Option<ExprKind> {
+    scopes
+        .iter()
+        .rev()
+        .find_map(|scope| scope.get(name))
+        .cloned()
+}
+
+fn infer_constant(kind: &ExprKind) -> Option<ExprKind> {
+    match kind {
+        ExprKind::IntLiteral(_)
+        | ExprKind::FloatLiteral(_)
+        | ExprKind::BoolLiteral(_) => Some(kind.clone()),
+        _ => None,
     }
 }
 
@@ -117,7 +168,11 @@ fn fold_binary(op: BinaryOp, left: &ExprKind, right: &ExprKind) -> Option<ExprKi
             Some(ExprKind::IntLiteral(lhs.wrapping_mul(*rhs)))
         }
         (BinaryOp::Div, ExprKind::IntLiteral(_lhs), ExprKind::IntLiteral(0)) => None,
-        (BinaryOp::Div, ExprKind::IntLiteral(lhs), ExprKind::IntLiteral(rhs)) if *lhs == i64::MIN && *rhs == -1 => None,
+        (BinaryOp::Div, ExprKind::IntLiteral(lhs), ExprKind::IntLiteral(rhs))
+            if *lhs == i64::MIN && *rhs == -1 =>
+        {
+            None
+        }
         (BinaryOp::Div, ExprKind::IntLiteral(lhs), ExprKind::IntLiteral(rhs)) => {
             Some(ExprKind::IntLiteral(lhs / rhs))
         }
@@ -239,5 +294,29 @@ mod tests {
             _ => panic!("expression de retour inattendue"),
         };
         assert!(matches!(return_expr, crate::ast::ExprKind::Identifier(name) if name == "x"));
+    }
+
+    #[test]
+    fn fold_identifier_const_from_let() {
+        let mut program = parse_program("fn main() -> i64 { let x = 2 + 3; return x + 1; }");
+        fold_program(&mut program);
+
+        let return_expr = match &program.functions[0].body.expressions[1].kind {
+            crate::ast::ExprKind::Return(Some(expr)) => &expr.kind,
+            _ => panic!("expression de retour inattendue"),
+        };
+        assert_eq!(return_expr, &crate::ast::ExprKind::IntLiteral(6));
+    }
+
+    #[test]
+    fn fold_boolean_comparison_simple() {
+        let mut program = parse_program("fn main() -> bool { let valid = true; return valid == true; }");
+        fold_program(&mut program);
+
+        let return_expr = match &program.functions[0].body.expressions[1].kind {
+            crate::ast::ExprKind::Return(Some(expr)) => &expr.kind,
+            _ => panic!("expression de retour inattendue"),
+        };
+        assert_eq!(return_expr, &crate::ast::ExprKind::BoolLiteral(true));
     }
 }
