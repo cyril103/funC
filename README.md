@@ -148,3 +148,7 @@ Comportement d'erreur:
 ## 🧪 Périmètre d’exemples
 
 - `EXAMPLES.md` : inventaire d’exemples classés par domaine (contrôle, mémoire, modules, CLI).
+
+## 📣 Notes de version
+
+- `RELEASE_NOTES_v1.0.md` : notes de release, limites connues et points de compatibilité.

@@ -34,9 +34,9 @@
 - [x] Finaliser une suite de régression complète (parsing/typecheck/codegen/runtime).
 - [x] Rédiger le guide de migration / upgrade.
 - [x] Publier une page `Exemples` par domaine (memoire, contrôle, modules, CLI).
-- [ ] Rédiger notes de version v1.0 avec limites connues et compatibilité.
+- [x] Rédiger notes de version v1.0 avec limites connues et compatibilité.
 
 ## Indicateur d’avancement
 - Priorité: livrer chaque phase par lot, avec vérification `cargo build` + jeux de tests pertinents par phase.
-- Statut actuel: Phase 4 en cours — suite de régression, guide migration et page Exemples à jour; restent les notes de version v1.0.
+- Statut actuel: Phase 4 terminée — suite de régression, migration, exemples et notes de version rédigées; prêt pour gel de release.
 - Objectif cible: stabiliser avant d’ajouter de nouvelles fonctionnalités de syntaxe.
