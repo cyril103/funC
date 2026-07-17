@@ -40,8 +40,22 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
     let mut inferred = HashMap::new();
     for function in &program.functions {
         let mut fn_env = env.clone_empty_scope();
+        fn_env.locals.push(HashMap::new());
         for param in &function.params {
-            fn_env.locals.push(HashMap::new());
+            if fn_env.locals.last().unwrap().contains_key(&param.name) {
+                return Err(TypeError {
+                    message: format!(
+                        "shadowing involontaire: le paramètre '{}' masque un symbole existant",
+                        param.name
+                    ),
+                    line: 0,
+                    column: 0,
+                    suggestion: Some(format!(
+                        "Choisissez un autre nom que '{}' pour ce paramètre.",
+                        param.name
+                    )),
+                });
+            }
             fn_env.locals.last_mut().unwrap().insert(
                 param.name.clone(),
                 (param.ty.clone(), false),
@@ -145,6 +159,20 @@ mod tests {
         let err = check(&program, "").unwrap_err();
         assert!(err.message.contains("hors limites"));
     }
+
+    #[test]
+    fn detect_shadowing_in_same_scope() {
+        let program = parse_program("fn main() -> i64 { let x = 1; let x = 2; return x; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("shadowing"));
+    }
+
+    #[test]
+    fn detect_shadowing_with_parameter() {
+        let program = parse_program("fn main(x: i64) -> i64 { let x = 2; return x; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("shadowing"));
+    }
 }
 
 #[derive(Clone)]
@@ -183,6 +211,10 @@ impl TypeEnvironment {
 
     fn pop_scope(&mut self) {
         self.locals.pop();
+    }
+
+    fn is_declared(&self, name: &str) -> bool {
+        self.locals.iter().any(|scope| scope.contains_key(name))
     }
 
     fn define(&mut self, name: String, ty: Type, mutable: bool) {
@@ -238,6 +270,20 @@ fn infer_expr(
             value,
             mutable,
         } => {
+            if env.is_declared(name) {
+                return Err(TypeError {
+                    message: format!(
+                        "shadowing involontaire: '{}' masque une variable existante",
+                        name
+                    ),
+                    line: expr.line,
+                    column: expr.column,
+                    suggestion: Some(
+                        "Choisissez un nom différent pour éviter l'ombre d'une variable existante."
+                            .to_string(),
+                    ),
+                });
+            }
             let init_ty = infer_expr(value, env, functions, inferred)?;
             if let Some(ann) = ty {
                 if &init_ty != ann {
