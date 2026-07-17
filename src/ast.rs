@@ -40,6 +40,10 @@ pub enum ExprKind {
         value: Box<Expr>,
     },
     Store(Box<Expr>, Box<Expr>),
+    While {
+        condition: Box<Expr>,
+        body: Block,
+    },
     IfElse {
         condition: Box<Expr>,
         then_block: Block,
@@ -182,6 +186,16 @@ impl Expr {
                 write!(f, ", ")?;
                 ptr.format(f, 0)?;
                 write!(f, ")")?;
+            }
+            ExprKind::While { condition, body } => {
+                write!(f, "{}while ", pad)?;
+                condition.format(f, 0)?;
+                writeln!(f, " {{")?;
+                for expr in &body.expressions {
+                    expr.format(f, indent + 1)?;
+                    writeln!(f, ";")?;
+                }
+                write!(f, "{}}}", pad)?;
             }
             ExprKind::IfElse {
                 condition,

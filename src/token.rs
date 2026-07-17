@@ -12,6 +12,7 @@ pub enum TokenKind {
     Fn,
     Let,
     If,
+    While,
     Else,
     Alloc,
     Free,

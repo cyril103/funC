@@ -144,6 +144,10 @@ impl Parser {
                 self.expect(TokenKind::Semi)?;
                 stmt
             }
+            Some(TokenKind::While) => {
+                let stmt = self.parse_while()?;
+                stmt
+            }
             Some(TokenKind::Store) => {
                 let stmt = self.parse_store()?;
                 self.expect(TokenKind::Semi)?;
@@ -210,6 +214,7 @@ impl Parser {
         match self.current_kind() {
             Some(TokenKind::Not) => self.parse_not(),
             Some(TokenKind::If) => self.parse_if_else(),
+            Some(TokenKind::While) => self.parse_while(),
             Some(TokenKind::LBrace) => {
                 let block = self.parse_block()?;
                 Ok(self.expr(ExprKind::Block(block)))
@@ -261,6 +266,28 @@ impl Parser {
             then_block,
             else_block,
         }))
+    }
+
+    fn parse_while(&mut self) -> Result<Expr, ParseError> {
+        let (start_line, start_column) = self.current_position();
+        self.expect(TokenKind::While)?;
+        let condition = if self.check(TokenKind::LParen) {
+            self.bump();
+            let condition = self.parse_expression(0)?;
+            self.expect(TokenKind::RParen)?;
+            condition
+        } else {
+            self.parse_expression(0)?
+        };
+        let body = self.parse_block()?;
+        Ok(self.expr_at(
+            start_line,
+            start_column,
+            ExprKind::While {
+                condition: Box::new(condition),
+                body,
+            },
+        ))
     }
 
     fn parse_not(&mut self) -> Result<Expr, ParseError> {
@@ -646,6 +673,22 @@ mod tests {
             assert!(matches!(and_right.kind, ExprKind::BoolLiteral(false)));
         } else {
             panic!("attendu and gauche imbriqué");
+        }
+    }
+
+    #[test]
+    fn parse_while_loop() {
+        let source = "fn main() -> i64 { while x < 3 { let x = 0; x; } }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let expr = &program.functions[0].body.expressions[0];
+        match &expr.kind {
+            ExprKind::While { condition, body } => {
+                assert!(matches!(condition.kind, ExprKind::Binary(_, _, _)));
+                assert_eq!(body.expressions.len(), 2);
+            }
+            _ => panic!("expression racine pas un while"),
         }
     }
 }

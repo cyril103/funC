@@ -216,6 +216,21 @@ fn infer_expr(
             }
             then_ty
         }
+        ExprKind::While { condition, body } => {
+            let cond_ty = infer_expr(condition, env, functions, inferred)?;
+            if cond_ty != Type::Bool {
+                return Err(TypeError {
+                    message: format!("condition while doit être bool, trouvé {}", cond_ty),
+                    line: expr.line,
+                    column: expr.column,
+                    suggestion: Some(
+                        "Utilisez une expression booléenne pour la condition du while.".to_string(),
+                    ),
+                });
+            }
+            let _body_ty = infer_block(body, &mut env.clone_empty_scope(), functions, inferred)?;
+            Type::Void
+        }
         ExprKind::Not(expr_arg) => {
             let operand_ty = infer_expr(expr_arg, env, functions, inferred)?;
             if operand_ty != Type::Bool {

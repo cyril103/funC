@@ -196,6 +196,7 @@ impl Generator {
                 then_block,
                 else_block,
             } => self.emit_if(condition, then_block, else_block),
+            ExprKind::While { condition, body } => self.emit_while(condition, body),
             ExprKind::Not(expr) => {
                 let expr = self.emit_expr(expr);
                 let expr = expr.0.expect("unary ! without value").into_int_value();
@@ -588,6 +589,37 @@ impl Generator {
         } else {
             (None, Type::Void)
         }
+    }
+
+    fn emit_while(&mut self, condition: &Expr, body: &Block) -> ValueWithType {
+        let current = self
+            .builder_ref()
+            .get_insert_block()
+            .expect("builder position required");
+        let parent = current.get_parent().expect("basic block without parent");
+
+        let cond_bb = self.context_ref().append_basic_block(parent, &self.next_label("while_cond"));
+        let body_bb = self.context_ref().append_basic_block(parent, &self.next_label("while_body"));
+        let after_bb = self.context_ref().append_basic_block(parent, &self.next_label("while_after"));
+        let _ = self
+            .builder_ref()
+            .build_unconditional_branch(cond_bb);
+
+        self.builder_ref().position_at_end(cond_bb);
+        let condition = self.emit_expr(condition);
+        let cond_value = condition.0.expect("while condition without value");
+        let _ = self.builder_ref().build_conditional_branch(
+            cond_value.into_int_value(),
+            body_bb,
+            after_bb,
+        );
+
+        self.builder_ref().position_at_end(body_bb);
+        let _ = self.emit_block(body);
+        let _ = self.builder_ref().build_unconditional_branch(cond_bb);
+
+        self.builder_ref().position_at_end(after_bb);
+        (None, Type::Void)
     }
 
     fn emit_logical(

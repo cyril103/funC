@@ -1,7 +1,7 @@
 # 🗺️ Feuille de Route : Compilateur FunC v2
 
 ## 🧭 Reprise immédiate (à partir d'aujourd'hui)
-1. Finaliser `Objectif 1`
+1. ✅ Finaliser `Objectif 1`
 2. ✅ Prioriser les 3 premières cartes, valables en l'état :
 3. ✅ Ajouter `else if` et l’`else if` chaîné
 4. ✅ Accepter la condition `if` entre parenthèses
@@ -29,7 +29,7 @@
 
 ## 🚀 Objectif 2 — Langage plus expressif (4–8 séances)
 1. Boucles
-   - Ajouter `while`
+   - ✅ Ajouter `while`
    - Ajouter `for`
 2. Retour explicite
    - Ajouter `return` comme mot-clé utilisable dans les blocs
