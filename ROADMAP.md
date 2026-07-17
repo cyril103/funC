@@ -47,7 +47,7 @@
    - ✅ Détecter le shadowing involontaire
    - ✅ Détecter les variables non utilisées
 2. Vérification de flux
-   - Vérifier qu'un bloc `if/else` (et branches) retourne un type cohérent dans toutes les issues
+   - ✅ Vérifier qu'un bloc `if/else` (et branches) retourne un type cohérent dans toutes les issues
 3. Gestion mémoire
    - `alloc` / `free` avec vérification heuristique des leaks (`--warn-memory`)
 4. Erreurs de types avancées

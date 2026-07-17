@@ -68,8 +68,9 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
             );
         }
         fn_env.return_type = Some(function.return_type.clone());
-        let body_ty = infer_block(&function.body, &mut fn_env, &env.functions, &mut inferred)?;
-        if !fn_env.saw_return && body_ty != function.return_type {
+        let body_completion = infer_block(&function.body, &mut fn_env, &env.functions, &mut inferred)?;
+        let body_ty = body_completion.ty();
+        if body_ty != function.return_type {
             return Err(TypeError {
                 message: format!(
                     "la fonction '{}' attend un retour '{}', mais le bloc retourne '{}'",
@@ -204,6 +205,19 @@ mod tests {
         let err = check(&program, "").unwrap_err();
         assert!(err.message.contains("jamais utilisée"));
     }
+
+    #[test]
+    fn if_else_all_branches_return_same_type() {
+        let program = parse_program("fn main() -> i64 { if true { 10 } else { 20 } }");
+        assert!(check(&program, "").is_ok());
+    }
+
+    #[test]
+    fn if_else_mismatched_completion_is_rejected() {
+        let program = parse_program("fn main() -> i64 { if true { return 1; } else { 2; } }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("incohérentes"));
+    }
 }
 
 #[derive(Clone)]
@@ -221,6 +235,21 @@ struct Symbol {
     used: bool,
     line: usize,
     column: usize,
+}
+
+#[derive(Clone)]
+enum ExprCompletion {
+    Value(Type),
+    Returns(Type),
+}
+
+impl ExprCompletion {
+    fn ty(&self) -> Type {
+        match self {
+            ExprCompletion::Value(ty) => ty.clone(),
+            ExprCompletion::Returns(ty) => ty.clone(),
+        }
+    }
 }
 
 impl TypeEnvironment {
@@ -328,11 +357,18 @@ fn infer_block(
     env: &mut TypeEnvironment,
     functions: &HashMap<String, FunctionSignature>,
     inferred: &mut HashMap<usize, Type>,
-) -> Result<Type, TypeError> {
-    let mut last = Type::Void;
+) -> Result<ExprCompletion, TypeError> {
+    let mut last = ExprCompletion::Value(Type::Void);
+    let mut terminated = false;
     env.push_scope();
     for expr in &block.expressions {
-        last = infer_expr(expr, env, functions, inferred)?;
+        let expr_completion = infer_expr(expr, env, functions, inferred)?;
+        if !terminated {
+            if let ExprCompletion::Returns(_) = expr_completion {
+                terminated = true;
+            }
+            last = expr_completion;
+        }
     }
     if let Some((name, line, column)) = env.first_unused_symbol_in_scope() {
         return Err(TypeError {
@@ -346,6 +382,7 @@ fn infer_block(
         });
     }
     env.pop_scope();
+
     Ok(last)
 }
 
@@ -354,8 +391,8 @@ fn infer_expr(
     env: &mut TypeEnvironment,
     functions: &HashMap<String, FunctionSignature>,
     inferred: &mut HashMap<usize, Type>,
-) -> Result<Type, TypeError> {
-    let ty = match &expr.kind {
+) -> Result<ExprCompletion, TypeError> {
+    let completion = match &expr.kind {
         ExprKind::Let {
             name,
             ty,
@@ -376,7 +413,7 @@ fn infer_expr(
                     ),
                 });
             }
-            let init_ty = infer_expr(value, env, functions, inferred)?;
+            let init_ty = infer_expr(value, env, functions, inferred)?.ty();
             if let Some(ann) = ty {
                 if &init_ty != ann {
                     return Err(TypeError {
@@ -398,10 +435,10 @@ fn infer_expr(
                 expr.line,
                 expr.column,
             );
-            final_ty
+            ExprCompletion::Value(final_ty)
         }
         ExprKind::Assign { name, value } => {
-            let rhs_ty = infer_expr(value, env, functions, inferred)?;
+            let rhs_ty = infer_expr(value, env, functions, inferred)?.ty();
             let (decl_ty, mutable) = env.resolve_symbol_for_use(name).ok_or_else(|| TypeError {
                 message: format!("identifiant '{}' inconnu", name),
                 line: expr.line,
@@ -433,11 +470,11 @@ fn infer_expr(
                     )),
                 });
             }
-            decl_ty
+            ExprCompletion::Value(decl_ty)
         }
         ExprKind::Store(value, ptr) => {
-            let value_ty = infer_expr(value, env, functions, inferred)?;
-            let ptr_ty = infer_expr(ptr, env, functions, inferred)?;
+            let value_ty = infer_expr(value, env, functions, inferred)?.ty();
+            let ptr_ty = infer_expr(ptr, env, functions, inferred)?.ty();
             match ptr_ty {
                 Type::Pointer(inner) => {
                     if *inner != value_ty {
@@ -463,14 +500,14 @@ fn infer_expr(
                     });
                 }
             }
-            Type::Void
+            ExprCompletion::Value(Type::Void)
         }
         ExprKind::IfElse {
             condition,
             then_block,
             else_block,
         } => {
-            let cond_ty = infer_expr(condition, env, functions, inferred)?;
+            let cond_ty = infer_expr(condition, env, functions, inferred)?.ty();
             if cond_ty != Type::Bool {
                 return Err(TypeError {
                     message: format!(
@@ -483,26 +520,71 @@ fn infer_expr(
                 });
             }
 
-            let then_ty = infer_block(then_block, &mut env.clone_empty_scope(), functions, inferred)?;
-            let else_ty = infer_block(else_block, &mut env.clone_empty_scope(), functions, inferred)?;
+            let then_completion =
+                infer_block(then_block, &mut env.clone_empty_scope(), functions, inferred)?;
+            let else_completion =
+                infer_block(else_block, &mut env.clone_empty_scope(), functions, inferred)?;
 
-            if then_ty != else_ty {
-                return Err(TypeError {
-                    message: format!(
-                        "branches if/else de types différents: {} vs {}",
-                        then_ty, else_ty
-                    ),
-                    line: expr.line,
-                    column: expr.column,
-                    suggestion: Some(
-                        "Faites retourner le même type dans les branches then/else.".to_string(),
-                    ),
-                });
+            match (&then_completion, &else_completion) {
+                (ExprCompletion::Value(then_ty), ExprCompletion::Value(else_ty)) => {
+                    if then_ty != else_ty {
+                        return Err(TypeError {
+                            message: format!(
+                                "branches if/else de types différents: {} vs {}",
+                                then_ty, else_ty
+                            ),
+                            line: expr.line,
+                            column: expr.column,
+                            suggestion: Some(
+                                "Faites retourner le même type dans les branches then/else."
+                                    .to_string(),
+                            ),
+                        });
+                    }
+                }
+                (ExprCompletion::Returns(then_ty), ExprCompletion::Returns(else_ty)) => {
+                    if then_ty != else_ty {
+                        return Err(TypeError {
+                            message: format!(
+                                "branches if/else incohérentes: deux retours de types différents: {} vs {}",
+                                then_ty, else_ty
+                            ),
+                            line: expr.line,
+                            column: expr.column,
+                            suggestion: Some(
+                                "Alignez le type de return attendu par la fonction sur les deux branches."
+                                    .to_string(),
+                            ),
+                        });
+                    }
+                }
+                _ => {
+                    return Err(TypeError {
+                        message:
+                            "branches if/else incohérentes: un chemin retourne explicitement, l'autre retourne une valeur"
+                                .to_string(),
+                        line: expr.line,
+                        column: expr.column,
+                        suggestion: Some(
+                            "Gardez un mode de retour homogène entre les branches (toutes expressions ou tous return)."
+                                .to_string(),
+                        ),
+                    });
+                }
             }
-            then_ty
+
+            match (then_completion, else_completion) {
+                (ExprCompletion::Value(then_ty), ExprCompletion::Value(_)) => {
+                    ExprCompletion::Value(then_ty)
+                }
+                (ExprCompletion::Returns(then_ty), ExprCompletion::Returns(_)) => {
+                    ExprCompletion::Returns(then_ty)
+                }
+                _ => unreachable!(),
+            }
         }
         ExprKind::While { condition, body } => {
-            let cond_ty = infer_expr(condition, env, functions, inferred)?;
+            let cond_ty = infer_expr(condition, env, functions, inferred)?.ty();
             if cond_ty != Type::Bool {
                 return Err(TypeError {
                     message: format!("condition while doit être bool, trouvé {}", cond_ty),
@@ -513,8 +595,8 @@ fn infer_expr(
                     ),
                 });
             }
-            let _body_ty = infer_block(body, &mut env.clone_empty_scope(), functions, inferred)?;
-            Type::Void
+            let _ = infer_block(body, &mut env.clone_empty_scope(), functions, inferred)?;
+            ExprCompletion::Value(Type::Void)
         }
         ExprKind::For {
             init,
@@ -526,7 +608,7 @@ fn infer_expr(
                 infer_expr(init, env, functions, inferred)?;
             }
             if let Some(condition) = condition {
-                let cond_ty = infer_expr(condition, env, functions, inferred)?;
+                let cond_ty = infer_expr(condition, env, functions, inferred)?.ty();
                 if cond_ty != Type::Bool {
                     return Err(TypeError {
                         message: format!("condition for doit être bool, trouvé {}", cond_ty),
@@ -542,7 +624,7 @@ fn infer_expr(
             if let Some(post) = post {
                 infer_expr(post, env, functions, inferred)?;
             }
-            Type::Void
+            ExprCompletion::Value(Type::Void)
         }
         ExprKind::Return(value) => {
             let expected = env
@@ -552,7 +634,7 @@ fn infer_expr(
             env.saw_return = true;
 
             match (value, expected) {
-                (None, Type::Void) => Type::Void,
+                (None, Type::Void) => ExprCompletion::Value(Type::Void),
                 (None, expected) => {
                     return Err(TypeError {
                         message: "return sans valeur dans une fonction non-void".to_string(),
@@ -576,7 +658,7 @@ fn infer_expr(
                     });
                 }
                 (Some(value), expected) => {
-                    let actual = infer_expr(value, env, functions, inferred)?;
+                    let actual = infer_expr(value, env, functions, inferred)?.ty();
                     if actual != expected {
                         return Err(TypeError {
                             message: format!(
@@ -591,12 +673,12 @@ fn infer_expr(
                             ),
                         });
                     }
-                    expected
+                    ExprCompletion::Returns(expected)
                 }
             }
         }
         ExprKind::Not(expr_arg) => {
-            let operand_ty = infer_expr(expr_arg, env, functions, inferred)?;
+            let operand_ty = infer_expr(expr_arg, env, functions, inferred)?.ty();
             if operand_ty != Type::Bool {
                 return Err(TypeError {
                     message: format!("! attend bool, trouvé {}", operand_ty),
@@ -605,23 +687,27 @@ fn infer_expr(
                     suggestion: Some("L'opérateur ! s'applique uniquement aux booléens.".to_string()),
                 });
             }
-            Type::Bool
+            ExprCompletion::Value(Type::Bool)
         }
-        ExprKind::Binary(op, left, right) => infer_binary(*op, left, right, env, functions, inferred)?,
-        ExprKind::Identifier(name) => env
-            .resolve_symbol_for_use(name)
-            .ok_or_else(|| TypeError {
-                message: format!("identifiant '{}' inconnu", name),
-                line: expr.line,
-                column: expr.column,
-                suggestion: Some(
-                    "Déclarez d'abord la variable avec let avant de l'utiliser.".to_string(),
-                ),
-            })?
-            .0,
-        ExprKind::IntLiteral(_) => Type::I64,
-        ExprKind::FloatLiteral(_) => Type::F64,
-        ExprKind::BoolLiteral(_) => Type::Bool,
+        ExprKind::Binary(op, left, right) => {
+            ExprCompletion::Value(infer_binary(*op, left, right, env, functions, inferred)?)
+        }
+        ExprKind::Identifier(name) => {
+            let (ty, _) = env
+                .resolve_symbol_for_use(name)
+                .ok_or_else(|| TypeError {
+                    message: format!("identifiant '{}' inconnu", name),
+                    line: expr.line,
+                    column: expr.column,
+                    suggestion: Some(
+                        "Déclarez d'abord la variable avec let avant de l'utiliser.".to_string(),
+                    ),
+                })?;
+            ExprCompletion::Value(ty)
+        }
+        ExprKind::IntLiteral(_) => ExprCompletion::Value(Type::I64),
+        ExprKind::FloatLiteral(_) => ExprCompletion::Value(Type::F64),
+        ExprKind::BoolLiteral(_) => ExprCompletion::Value(Type::Bool),
         ExprKind::Call { name, args } => {
             let sig = functions.get(name).ok_or_else(|| TypeError {
                 message: format!("fonction '{}' inconnue", name),
@@ -643,7 +729,7 @@ fn infer_expr(
                 });
             }
             for (idx, arg) in args.iter().enumerate() {
-                let arg_ty = infer_expr(arg, env, functions, inferred)?;
+                    let arg_ty = infer_expr(arg, env, functions, inferred)?.ty();
                 if arg_ty != sig.params[idx] {
                     return Err(TypeError {
                         message: format!(
@@ -656,10 +742,10 @@ fn infer_expr(
                     });
                 }
             }
-            sig.return_type.clone()
+            ExprCompletion::Value(sig.return_type.clone())
         }
         ExprKind::Alloc(size) => {
-            let size_ty = infer_expr(size, env, functions, inferred)?;
+            let size_ty = infer_expr(size, env, functions, inferred)?.ty();
             if size_ty != Type::I64 && size_ty != Type::I32 {
                 return Err(TypeError {
                     message: "alloc attend un entier de taille".to_string(),
@@ -670,12 +756,12 @@ fn infer_expr(
                     ),
                 });
             }
-            Type::Pointer(Box::new(Type::I8))
+            ExprCompletion::Value(Type::Pointer(Box::new(Type::I8)))
         }
         ExprKind::Free(ptr) => {
-            let ptr_ty = infer_expr(ptr, env, functions, inferred)?;
+            let ptr_ty = infer_expr(ptr, env, functions, inferred)?.ty();
             match ptr_ty {
-                Type::Pointer(_) => Type::Void,
+                Type::Pointer(_) => ExprCompletion::Value(Type::Void),
                 _ => {
                     return Err(TypeError {
                         message: "free attend un pointeur".to_string(),
@@ -688,7 +774,7 @@ fn infer_expr(
         }
         ExprKind::Load(ptr) => {
             match infer_expr(ptr, env, functions, inferred)? {
-                Type::Pointer(inner) => *inner,
+                ExprCompletion::Value(Type::Pointer(inner)) => ExprCompletion::Value(*inner),
                 _ => {
                     return Err(TypeError {
                         message: "load attend un pointeur".to_string(),
@@ -700,8 +786,8 @@ fn infer_expr(
             }
         }
         ExprKind::Index { array, index } => {
-            let array_ty = infer_expr(array, env, functions, inferred)?;
-            let index_ty = infer_expr(index, env, functions, inferred)?;
+            let array_ty = infer_expr(array, env, functions, inferred)?.ty();
+            let index_ty = infer_expr(index, env, functions, inferred)?.ty();
             if !index_ty.is_integer() {
                 return Err(TypeError {
                     message: format!("indexation attend un type entier, trouvé {}", index_ty),
@@ -737,7 +823,7 @@ fn infer_expr(
                             }
                         }
                     }
-                    *inner
+                    ExprCompletion::Value(*inner)
                 }
                 _ => {
                     return Err(TypeError {
@@ -762,13 +848,13 @@ fn infer_expr(
                 Type::Pointer(inner) => 8 + size_of_type(inner.as_ref()).unwrap_or(8),
             };
             inferred.insert(expr.id, Type::I64);
-            Type::I64
+            ExprCompletion::Value(Type::I64)
         }
         ExprKind::Block(block) => infer_block(block, env, functions, inferred)?,
     };
 
-    inferred.insert(expr.id, ty.clone());
-    Ok(ty)
+    inferred.insert(expr.id, completion.ty());
+    Ok(completion)
 }
 
 fn infer_binary(
@@ -779,8 +865,8 @@ fn infer_binary(
     functions: &HashMap<String, FunctionSignature>,
     inferred: &mut HashMap<usize, Type>,
 ) -> Result<Type, TypeError> {
-    let left_ty = infer_expr(left, env, functions, inferred)?;
-    let right_ty = infer_expr(right, env, functions, inferred)?;
+    let left_ty = infer_expr(left, env, functions, inferred)?.ty();
+    let right_ty = infer_expr(right, env, functions, inferred)?.ty();
 
     if left_ty != right_ty {
         return Err(TypeError {
