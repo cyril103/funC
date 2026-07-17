@@ -148,10 +148,10 @@ fn fold_binary(op: BinaryOp, left: &ExprKind, right: &ExprKind) -> Option<ExprKi
             Some(ExprKind::BoolLiteral(lhs != rhs))
         }
         (BinaryOp::Or, ExprKind::BoolLiteral(lhs), ExprKind::BoolLiteral(rhs)) => {
-            Some(ExprKind::BoolLiteral(lhs || rhs))
+            Some(ExprKind::BoolLiteral(*lhs || *rhs))
         }
         (BinaryOp::And, ExprKind::BoolLiteral(lhs), ExprKind::BoolLiteral(rhs)) => {
-            Some(ExprKind::BoolLiteral(lhs && rhs))
+            Some(ExprKind::BoolLiteral(*lhs && *rhs))
         }
         (BinaryOp::Eq, ExprKind::IntLiteral(lhs), ExprKind::IntLiteral(rhs)) => {
             Some(ExprKind::BoolLiteral(lhs == rhs))

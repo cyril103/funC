@@ -91,11 +91,10 @@ impl Generator {
             Type::U64 => context.i64_type().as_basic_type_enum(),
             Type::F32 => context.f32_type().as_basic_type_enum(),
             Type::F64 => context.f64_type().as_basic_type_enum(),
-            Type::Array(inner, len) => context
-                .array_type(
-                    self.llvm_type(inner).unwrap_or(self.i8_ptr_type().as_basic_type_enum()),
-                    (*len).try_into().unwrap_or(0),
-                )
+            Type::Array(inner, len) => self
+                .llvm_type(inner)
+                .unwrap_or(self.i8_ptr_type().as_basic_type_enum())
+                .array_type((*len).try_into().unwrap_or(0))
                 .as_basic_type_enum(),
             Type::Struct(_) => self.i8_ptr_type().as_basic_type_enum(),
             Type::Enum(_) => self.i8_ptr_type().as_basic_type_enum(),

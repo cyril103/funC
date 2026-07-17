@@ -302,7 +302,7 @@ fn run_compile(args: CompileArgs) {
             }
         }
 
-        let asm_path = if args.emit_asm {
+        let _asm_path = if args.emit_asm {
             Some(emit_asm(&ir, &args, &target_info))
         } else {
             None
@@ -583,7 +583,7 @@ fn link_executable(object_path: &PathBuf, args: &CompileArgs, target: &TargetInf
 
         match status {
             Ok(exit) if exit.success() => {
-                println!("Exécutable écrit dans {exe_path}");
+                println!("Exécutable écrit dans {}", exe_path.display());
                 return;
             }
             Ok(exit) => {

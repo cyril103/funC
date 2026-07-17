@@ -146,23 +146,34 @@ impl FunctionMemoryState {
     }
 
     fn assign_symbol(&mut self, name: &str, new_allocation: Option<usize>, line: usize, column: usize) {
-        for scope in self.scopes.iter_mut().rev() {
-            if let Some(current) = scope.get_mut(name) {
-                if let Some(current_allocation) = *current {
-                    if current_allocation != new_allocation
-                        && !self.alloc_freed.get(&current_allocation).copied().unwrap_or(false)
-                    {
-                        let message = format!(
-                            "la variable '{}' est réaffectée sans libérer l'allocation précédente",
-                            name
-                        );
-                        self.warn(line, column, message);
-                        self.warned_allocs.insert(current_allocation);
-                    }
-                }
-                *current = new_allocation;
-                return;
+        let mut scope_index = None;
+        let mut current_allocation = None;
+        for (idx, scope) in self.scopes.iter().enumerate() {
+            if scope.contains_key(name) {
+                scope_index = Some(idx);
+                current_allocation = scope.get(name).copied().flatten();
+                break;
             }
+        }
+
+        if let Some(current_allocation) = current_allocation {
+            let should_warn = if let Some(next_allocation) = new_allocation {
+                current_allocation != next_allocation
+            } else {
+                true
+            };
+            if should_warn && !self.alloc_freed.get(&current_allocation).copied().unwrap_or(false) {
+                let message = format!(
+                    "la variable '{}' est réaffectée sans libérer l'allocation précédente",
+                    name
+                );
+                self.warn(line, column, message);
+                self.warned_allocs.insert(current_allocation);
+            }
+        }
+
+        if let Some(idx) = scope_index {
+            self.scopes[idx].insert(name.to_string(), new_allocation);
         }
     }
 
@@ -196,14 +207,15 @@ impl FunctionMemoryState {
     }
 
     fn finalize(&mut self) -> Vec<MemoryWarning> {
-        for alloc_id in self.local_allocs.iter() {
-            if self.warned_allocs.contains(alloc_id) {
+        let local_allocs: Vec<usize> = self.local_allocs.iter().copied().collect();
+        for alloc_id in local_allocs {
+            if self.warned_allocs.contains(&alloc_id) {
                 continue;
             }
-            if self.alloc_freed.get(alloc_id).copied().unwrap_or(false) {
+            if self.alloc_freed.get(&alloc_id).copied().unwrap_or(false) {
                 continue;
             }
-            let (line, column) = self.alloc_sites.get(alloc_id).copied().unwrap_or((0, 0));
+            let (line, column) = self.alloc_sites.get(&alloc_id).copied().unwrap_or((0, 0));
             self.warn(
                 line,
                 column,

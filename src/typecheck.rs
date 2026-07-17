@@ -119,7 +119,7 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
             function.name.clone(),
             FunctionSignature {
                 params: normalized_params,
-                return_type: normalized_return,
+                return_type: normalized_return.clone(),
             },
         );
     }
@@ -160,7 +160,7 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
                 },
             );
         }
-        fn_env.return_type = Some(normalized_return);
+        fn_env.return_type = Some(normalized_return.clone());
         let body_completion = infer_block(&function.body, &mut fn_env, &env.functions, &mut inferred)?;
         let body_ty = body_completion.ty();
         if body_ty != normalized_return {
@@ -1070,71 +1070,68 @@ fn infer_expr(
                 }
             }
         }
-        ExprKind::Index { array, index } => {
-            let array_ty = infer_expr(array, env, functions, inferred)?.ty();
-            let index_ty = infer_expr(index, env, functions, inferred)?.ty();
-            if !index_ty.is_integer() {
-                return Err(TypeError {
-                    message: format!("indexation attend un type entier, trouvé {}", index_ty),
-                    line: expr.line,
-                    column: expr.column,
-                    suggestion: Some("Utilisez un indice de type entier pour accéder à un tableau.".to_string()),
-                });
-            }
-            match array_ty {
-                Type::Array(inner, len) => {
-                    if let ExprKind::IntLiteral(index_literal) = &index.kind {
-                        if *index_literal < 0 {
-                            return Err(TypeError {
-                                message: "indexation négative interdite".to_string(),
-                                line: index.line,
-                                column: index.column,
-                                suggestion: Some(
-                                    "Utilisez un indice non négatif.".to_string(),
-                                ),
-                            });
-                        }
-                        if let Ok(index) = usize::try_from(*index_literal) {
-                            if index >= len {
-                                return Err(TypeError {
-                                    message: "index hors limites du tableau".to_string(),
-                                    line: index.line,
-                                    column: index.column,
-                                    suggestion: Some(format!(
-                                        "Utilisez un indice entre 0 et {}.",
-                                        len.saturating_sub(1)
-                                    )),
-                                });
-                            }
-                        }
-                    }
-                    ExprCompletion::Value(*inner)
-                }
-                _ => {
-                    let detail = type_mismatch_detail(&Type::Array(Box::new(Type::I64), 0), &array_ty)
-                        .map(|extra| format!(" ({extra})"))
-                        .unwrap_or_default();
+            ExprKind::Index { array, index } => {
+                let array_ty = infer_expr(array, env, functions, inferred)?.ty();
+                let index_ty = infer_expr(index, env, functions, inferred)?.ty();
+                if !index_ty.is_integer() {
                     return Err(TypeError {
-                        message: format!("indexation attend un tableau, trouvé {}{detail}", array_ty),
+                        message: format!("indexation attend un type entier, trouvé {}", index_ty),
                         line: expr.line,
                         column: expr.column,
                         suggestion: Some(
-                            "Indexez un tableau de la forme `[T; N]`.".to_string(),
+                            "Utilisez un indice de type entier pour accéder à un tableau.".to_string(),
                         ),
                     });
                 }
+                match array_ty {
+                    Type::Array(inner, len) => {
+                        if let ExprKind::IntLiteral(index_literal) = &index.kind {
+                            if *index_literal < 0 {
+                                return Err(TypeError {
+                                    message: "indexation négative interdite".to_string(),
+                                    line: index.line,
+                                    column: index.column,
+                                    suggestion: Some(
+                                        "Utilisez un indice non négatif.".to_string(),
+                                    ),
+                                });
+                            }
+                            if let Ok(index_value) = usize::try_from(*index_literal) {
+                                if index_value >= len {
+                                    return Err(TypeError {
+                                        message: "index hors limites du tableau".to_string(),
+                                        line: index.line,
+                                        column: index.column,
+                                        suggestion: Some(format!(
+                                            "Utilisez un indice entre 0 et {}.",
+                                            len.saturating_sub(1)
+                                        )),
+                                    });
+                                }
+                            }
+                        }
+                        ExprCompletion::Value(*inner)
+                    }
+                    _ => {
+                        let detail = type_mismatch_detail(&Type::Array(Box::new(Type::I64), 0), &array_ty)
+                            .map(|extra| format!(" ({extra})"))
+                            .unwrap_or_default();
+                        return Err(TypeError {
+                            message: format!("indexation attend un tableau, trouvé {}{detail}", array_ty),
+                            line: expr.line,
+                            column: expr.column,
+                            suggestion: Some(
+                                "Indexez un tableau de la forme `[T; N]`.".to_string(),
+                            ),
+                        });
+                    }
+                }
             }
-        }
         ExprKind::SizeOf(ty) => {
-            let _bytes = match ty {
-                Type::Void => 0,
-                Type::Bool => 1,
-                Type::I8 | Type::U8 => 1,
-                Type::I16 | Type::U16 => 2,
-                Type::I32 | Type::U32 | Type::F32 => 4,
-                Type::I64 | Type::U64 | Type::F64 => 8,
-                Type::Pointer(inner) => 8 + size_of_type(inner.as_ref()).unwrap_or(8),
-                Type::Struct(name) => {
+            let size = match size_of_type(&ty) {
+                Some(bytes) => bytes,
+                None => match ty {
+                    Type::Struct(name) => {
                     return Err(TypeError {
                         message: format!("sizeof ne supporte pas encore le type struct '{name}'"),
                         line: expr.line,
@@ -1153,8 +1150,21 @@ fn infer_expr(
                             "Utilisez la taille d'un type scalaire ou d'un pointeur.".to_string(),
                         ),
                     });
-                }
+                    }
+                    unsupported => {
+                        return Err(TypeError {
+                            message: format!("sizeof ne sait pas évaluer la taille de '{unsupported}'"),
+                            line: expr.line,
+                            column: expr.column,
+                            suggestion: Some(
+                                "Utilisez un type supporté par sizeof pour l'instant."
+                                    .to_string(),
+                            ),
+                        });
+                    }
+                },
             };
+            let _bytes = size;
             inferred.insert(expr.id, Type::I64);
             ExprCompletion::Value(Type::I64)
         }
