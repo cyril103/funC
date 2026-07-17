@@ -947,7 +947,6 @@ fn locate_control_span(
         };
         let slice = &text[start_byte..];
         for (offset, ch) in slice.char_indices() {
-            let absolute = start_byte + offset + 1;
             if ch == '{' {
                 depth += 1;
                 seen_open = true;
@@ -993,7 +992,6 @@ fn locate_import_span(
 
     for current_line in line..=lines.len() {
         let text = lines[current_line - 1];
-        let search = text.find(';');
         let start_search = if current_line == line {
             byte_index_after(line_text, keyword_offset.saturating_sub(1))
         } else {
@@ -1059,17 +1057,11 @@ fn byte_index_after(line: &str, column_minus_one: usize) -> usize {
     if line.is_empty() {
         return 0;
     }
-    let mut index = 0;
-    for (idx, (offset, ch)) in line.char_indices().enumerate() {
+    for (idx, (offset, _ch)) in line.char_indices().enumerate() {
         if idx == column_minus_one {
             return offset;
         }
-        index = offset + ch.len_utf8();
-        if idx + 1 >= column_minus_one {
-            break;
-        }
     }
-    let _ = index;
     line.len()
 }
 
