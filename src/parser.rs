@@ -144,6 +144,10 @@ impl Parser {
                 self.expect(TokenKind::Semi)?;
                 stmt
             }
+            Some(TokenKind::For) => {
+                let stmt = self.parse_for()?;
+                stmt
+            }
             Some(TokenKind::While) => {
                 let stmt = self.parse_while()?;
                 stmt
@@ -214,7 +218,6 @@ impl Parser {
         match self.current_kind() {
             Some(TokenKind::Not) => self.parse_not(),
             Some(TokenKind::If) => self.parse_if_else(),
-            Some(TokenKind::While) => self.parse_while(),
             Some(TokenKind::LBrace) => {
                 let block = self.parse_block()?;
                 Ok(self.expr(ExprKind::Block(block)))
@@ -285,6 +288,45 @@ impl Parser {
             start_column,
             ExprKind::While {
                 condition: Box::new(condition),
+                body,
+            },
+        ))
+    }
+
+    fn parse_for(&mut self) -> Result<Expr, ParseError> {
+        let (start_line, start_column) = self.current_position();
+        self.expect(TokenKind::For)?;
+        self.expect(TokenKind::LParen)?;
+
+        let init = if self.check(TokenKind::Semi) {
+            None
+        } else {
+            Some(Box::new(self.parse_expression(0)?))
+        };
+        self.expect(TokenKind::Semi)?;
+
+        let condition = if self.check(TokenKind::Semi) {
+            None
+        } else {
+            Some(Box::new(self.parse_expression(0)?))
+        };
+        self.expect(TokenKind::Semi)?;
+
+        let post = if self.check(TokenKind::RParen) {
+            None
+        } else {
+            Some(Box::new(self.parse_expression(0)?))
+        };
+        self.expect(TokenKind::RParen)?;
+
+        let body = self.parse_block()?;
+        Ok(self.expr_at(
+            start_line,
+            start_column,
+            ExprKind::For {
+                init,
+                condition,
+                post,
                 body,
             },
         ))
@@ -689,6 +731,29 @@ mod tests {
                 assert_eq!(body.expressions.len(), 2);
             }
             _ => panic!("expression racine pas un while"),
+        }
+    }
+
+    #[test]
+    fn parse_for_loop() {
+        let source = "fn main() -> i64 { let x = 0; for (; x < 3; x) { x; } }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        let expr = &program.functions[0].body.expressions[1];
+        match &expr.kind {
+            ExprKind::For {
+                init,
+                condition,
+                post,
+                body,
+            } => {
+                assert!(init.is_none());
+                assert!(condition.is_some());
+                assert!(post.is_some());
+                assert_eq!(body.expressions.len(), 1);
+            }
+            _ => panic!("expression racine pas un for"),
         }
     }
 }

@@ -197,6 +197,12 @@ impl Generator {
                 else_block,
             } => self.emit_if(condition, then_block, else_block),
             ExprKind::While { condition, body } => self.emit_while(condition, body),
+            ExprKind::For {
+                init,
+                condition,
+                post,
+                body,
+            } => self.emit_for(init, condition, post, body),
             ExprKind::Not(expr) => {
                 let expr = self.emit_expr(expr);
                 let expr = expr.0.expect("unary ! without value").into_int_value();
@@ -616,6 +622,69 @@ impl Generator {
 
         self.builder_ref().position_at_end(body_bb);
         let _ = self.emit_block(body);
+        let _ = self.builder_ref().build_unconditional_branch(cond_bb);
+
+        self.builder_ref().position_at_end(after_bb);
+        (None, Type::Void)
+    }
+
+    fn emit_for(
+        &mut self,
+        init: &Option<Box<Expr>>,
+        condition: &Option<Box<Expr>>,
+        post: &Option<Box<Expr>>,
+        body: &Block,
+    ) -> ValueWithType {
+        if let Some(init_expr) = init {
+            let _ = self.emit_expr(init_expr);
+        }
+
+        let current = self
+            .builder_ref()
+            .get_insert_block()
+            .expect("builder position required");
+        let parent = current.get_parent().expect("basic block without parent");
+
+        let cond_bb = self
+            .context_ref()
+            .append_basic_block(parent, &self.next_label("for_cond"));
+        let body_bb = self
+            .context_ref()
+            .append_basic_block(parent, &self.next_label("for_body"));
+        let post_bb = self
+            .context_ref()
+            .append_basic_block(parent, &self.next_label("for_post"));
+        let after_bb = self
+            .context_ref()
+            .append_basic_block(parent, &self.next_label("for_after"));
+        let _ = self
+            .builder_ref()
+            .build_unconditional_branch(cond_bb);
+
+        self.builder_ref().position_at_end(cond_bb);
+        let cond_value = if let Some(condition) = condition {
+            let cond = self
+                .emit_expr(condition)
+                .0
+                .expect("for condition without value");
+            cond.into_int_value()
+        } else {
+            self.context_ref().bool_type().const_int(1, false)
+        };
+        let _ = self.builder_ref().build_conditional_branch(
+            cond_value,
+            body_bb,
+            after_bb,
+        );
+
+        self.builder_ref().position_at_end(body_bb);
+        let _ = self.emit_block(body);
+        let _ = self.builder_ref().build_unconditional_branch(post_bb);
+
+        self.builder_ref().position_at_end(post_bb);
+        if let Some(post_expr) = post {
+            let _ = self.emit_expr(post_expr);
+        }
         let _ = self.builder_ref().build_unconditional_branch(cond_bb);
 
         self.builder_ref().position_at_end(after_bb);

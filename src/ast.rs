@@ -40,6 +40,12 @@ pub enum ExprKind {
         value: Box<Expr>,
     },
     Store(Box<Expr>, Box<Expr>),
+    For {
+        init: Option<Box<Expr>>,
+        condition: Option<Box<Expr>>,
+        post: Option<Box<Expr>>,
+        body: Block,
+    },
     While {
         condition: Box<Expr>,
         body: Block,
@@ -186,6 +192,31 @@ impl Expr {
                 write!(f, ", ")?;
                 ptr.format(f, 0)?;
                 write!(f, ")")?;
+            }
+            ExprKind::For {
+                init,
+                condition,
+                post,
+                body,
+            } => {
+                write!(f, "{}for (", pad)?;
+                if let Some(init) = init {
+                    init.format(f, 0)?;
+                }
+                write!(f, "; ")?;
+                if let Some(condition) = condition {
+                    condition.format(f, 0)?;
+                }
+                write!(f, "; ")?;
+                if let Some(post) = post {
+                    post.format(f, 0)?;
+                }
+                writeln!(f, ") {{")?;
+                for expr in &body.expressions {
+                    expr.format(f, indent + 1)?;
+                    writeln!(f, ";")?;
+                }
+                write!(f, "{}}}", pad)?;
             }
             ExprKind::While { condition, body } => {
                 write!(f, "{}while ", pad)?;

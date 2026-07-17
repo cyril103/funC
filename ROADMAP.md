@@ -30,7 +30,7 @@
 ## 🚀 Objectif 2 — Langage plus expressif (4–8 séances)
 1. Boucles
    - ✅ Ajouter `while`
-   - Ajouter `for`
+   - ✅ Ajouter `for`
 2. Retour explicite
    - Ajouter `return` comme mot-clé utilisable dans les blocs
 3. Mutabilité
