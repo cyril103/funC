@@ -536,24 +536,6 @@ impl TypeEnvironment {
         }
     }
 
-    fn resolve(&self, name: &str) -> Option<Type> {
-        for scope in self.locals.iter().rev() {
-            if let Some(symbol) = scope.get(name) {
-                return Some(symbol.ty.clone());
-            }
-        }
-        None
-    }
-
-    fn resolve_symbol(&self, name: &str) -> Option<(Type, bool)> {
-        for scope in self.locals.iter().rev() {
-            if let Some(symbol) = scope.get(name) {
-                return Some((symbol.ty.clone(), symbol.mutable));
-            }
-        }
-        None
-    }
-
     fn resolve_symbol_for_use(&mut self, name: &str) -> Option<(Type, bool)> {
         for scope in self.locals.iter_mut().rev() {
             if let Some(symbol) = scope.get_mut(name) {
@@ -900,7 +882,7 @@ fn infer_expr(
 
             match (value, expected) {
                 (None, Type::Void) => ExprCompletion::Value(Type::Void),
-                (None, expected) => {
+                (None, _expected) => {
                     return Err(TypeError {
                         message: "return sans valeur dans une fonction non-void".to_string(),
                         line: expr.line,

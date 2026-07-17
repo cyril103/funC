@@ -76,7 +76,6 @@ fn fold_expr(expr: &mut Expr) {
             fold_expr(index);
         }
         ExprKind::Alloc(size) => fold_expr(size),
-        ExprKind::Free(size) => fold_expr(size),
         ExprKind::Call { args, .. } => {
             for arg in args.iter_mut() {
                 fold_expr(arg);
@@ -117,12 +116,12 @@ fn fold_binary(op: BinaryOp, left: &ExprKind, right: &ExprKind) -> Option<ExprKi
         (BinaryOp::Mul, ExprKind::IntLiteral(lhs), ExprKind::IntLiteral(rhs)) => {
             Some(ExprKind::IntLiteral(lhs.wrapping_mul(*rhs)))
         }
-        (BinaryOp::Div, ExprKind::IntLiteral(lhs), ExprKind::IntLiteral(0)) => None,
+        (BinaryOp::Div, ExprKind::IntLiteral(_lhs), ExprKind::IntLiteral(0)) => None,
         (BinaryOp::Div, ExprKind::IntLiteral(lhs), ExprKind::IntLiteral(rhs)) if *lhs == i64::MIN && *rhs == -1 => None,
         (BinaryOp::Div, ExprKind::IntLiteral(lhs), ExprKind::IntLiteral(rhs)) => {
             Some(ExprKind::IntLiteral(lhs / rhs))
         }
-        (BinaryOp::Mod, ExprKind::IntLiteral(lhs), ExprKind::IntLiteral(0)) => None,
+        (BinaryOp::Mod, ExprKind::IntLiteral(_lhs), ExprKind::IntLiteral(0)) => None,
         (BinaryOp::Mod, ExprKind::IntLiteral(lhs), ExprKind::IntLiteral(rhs)) => {
             Some(ExprKind::IntLiteral(lhs % rhs))
         }
