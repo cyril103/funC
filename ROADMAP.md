@@ -57,7 +57,7 @@
 
 ## 🧪 Objectif 4 — Outils & ergonomie (12–16 séances)
 1. Commande de formatage
-   - Ajouter `funC fmt` pour une mise en forme de base
+  - ✅ Ajouter `funC fmt` pour une mise en forme de base
 2. Référentiel d’exemples
    - `examples/if_else`, `examples/loops`, `examples/pointers`, `examples/cross-target`
 3. Documentation utilisateur

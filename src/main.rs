@@ -24,6 +24,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Compile(CompileArgs),
+    Fmt(FmtArgs),
     /// Affiche les cibles supportées et les alias reconnus
     ListTargets,
 }
@@ -86,6 +87,20 @@ struct CompileArgs {
     target: Option<String>,
 }
 
+#[derive(Debug, Args)]
+struct FmtArgs {
+    /// Fichier source FunC à formater
+    input: String,
+
+    /// Fichier de sortie (défaut : réécrire le fichier d'entrée)
+    #[arg(short, long)]
+    out: Option<String>,
+
+    /// Vérifie seulement (exit code 1 si des changements seraient produits)
+    #[arg(short, long)]
+    check: bool,
+}
+
 #[derive(Debug)]
 struct TargetInfo {
     triple: String,
@@ -118,7 +133,57 @@ fn main() {
 
     match cli.command {
         Commands::Compile(args) => run_compile(args),
+        Commands::Fmt(args) => run_fmt(args),
         Commands::ListTargets => list_targets(),
+    }
+}
+
+fn run_fmt(args: FmtArgs) {
+    let source = match fs::read_to_string(&args.input) {
+        Ok(s) => s,
+        Err(err) => {
+            eprintln!("Impossible de lire le fichier {}: {err}", args.input);
+            process::exit(1);
+        }
+    };
+
+    let tokens = match Lexer::new(&source).tokenize() {
+        Ok(tokens) => tokens,
+        Err(err) => {
+            eprintln!("Erreur lexer: {err}");
+            process::exit(1);
+        }
+    };
+
+    let parsed = match FuncParser::new(tokens).parse_program() {
+        Ok(program) => program,
+        Err(err) => {
+            print_diagnostic(
+                &source,
+                "Erreur parser",
+                err.line,
+                err.column,
+                &err.message,
+                Some("Réparez la syntaxe pour pouvoir lancer le formateur."),
+            );
+            process::exit(1);
+        }
+    };
+
+    let formatted = format!("{}\n", parsed);
+    let normalized_source = source.replace('\r', "");
+    if args.check {
+        if normalized_source == formatted {
+            return;
+        }
+        eprintln!("Le fichier {} n'est pas formaté", args.input);
+        process::exit(1);
+    }
+
+    let output = args.out.unwrap_or(args.input);
+    if let Err(err) = fs::write(&output, formatted) {
+        eprintln!("Impossible d'écrire le fichier formaté {}: {err}", output);
+        process::exit(1);
     }
 }
 
