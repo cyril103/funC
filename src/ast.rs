@@ -3,7 +3,27 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub functions: Vec<Function>,
+    pub structs: Vec<StructDecl>,
+    pub enums: Vec<EnumDecl>,
     pub imports: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructDecl {
+    pub name: String,
+    pub fields: Vec<StructField>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructField {
+    pub name: String,
+    pub ty: Type,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumDecl {
+    pub name: String,
+    pub variants: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -114,6 +134,8 @@ pub enum Type {
     U64,
     F32,
     F64,
+    Struct(String),
+    Enum(String),
     Array(Box<Type>, usize),
     Pointer(Box<Type>),
 }
@@ -154,6 +176,8 @@ impl fmt::Display for Type {
             Type::U64 => write!(f, "u64"),
             Type::F32 => write!(f, "f32"),
             Type::F64 => write!(f, "f64"),
+            Type::Struct(name) => write!(f, "{name}"),
+            Type::Enum(name) => write!(f, "{name}"),
             Type::Array(inner, len) => write!(f, "[{}; {}]", inner, len),
             Type::Pointer(inner) => write!(f, "*{}", inner),
         }
@@ -365,6 +389,25 @@ impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for import in &self.imports {
             writeln!(f, "import \"{import}\";")?;
+            writeln!(f)?;
+        }
+        for decl in &self.structs {
+            writeln!(f, "struct {} {{", decl.name)?;
+            for field in &decl.fields {
+                writeln!(f, "  {}: {};", field.name, field.ty)?;
+            }
+            writeln!(f, "}}")?;
+            writeln!(f)?;
+        }
+        for decl in &self.enums {
+            write!(f, "enum {} {{ ", decl.name)?;
+            for (idx, variant) in decl.variants.iter().enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{variant}")?;
+            }
+            writeln!(f, " }}")?;
             writeln!(f)?;
         }
         for (idx, function) in self.functions.iter().enumerate() {

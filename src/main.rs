@@ -467,6 +467,8 @@ fn load_program_from_entry(entry: &str) -> Result<Program, String> {
     load_module_program(entry_path, &mut visited, &mut functions)?;
     Ok(Program {
         functions,
+        structs: Vec::new(),
+        enums: Vec::new(),
         imports: Vec::new(),
     })
 }

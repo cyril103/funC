@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{BinaryOp, Block, Expr, ExprKind, Program, Type};
 
@@ -19,7 +19,65 @@ pub struct TypeError {
 pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, TypeError> {
     let mut env = TypeEnvironment::new();
 
+    for struct_decl in &program.structs {
+        if env.functions.contains_key(&struct_decl.name)
+            || env.struct_types.contains(&struct_decl.name)
+            || env.enum_types.contains(&struct_decl.name)
+        {
+            return Err(TypeError {
+                message: format!("déclaration '{}' en conflit avec un symbole existant", struct_decl.name),
+                line: 0,
+                column: 0,
+                suggestion: Some(
+                    "Renommez la structure pour éviter un conflit avec une fonction existante."
+                        .to_string(),
+                ),
+            });
+        }
+        env.struct_types.insert(struct_decl.name.clone());
+    }
+
+    for enum_decl in &program.enums {
+        if env.functions.contains_key(&enum_decl.name)
+            || env.enum_types.contains(&enum_decl.name)
+            || env.struct_types.contains(&enum_decl.name)
+        {
+            return Err(TypeError {
+                message: format!(
+                    "déclaration '{}' en conflit avec un symbole existant",
+                    enum_decl.name
+                ),
+                line: 0,
+                column: 0,
+                suggestion: Some(
+                    "Renommez l'énumération pour éviter un conflit avec une fonction existante."
+                        .to_string(),
+                ),
+            });
+        }
+        env.enum_types.insert(enum_decl.name.clone());
+    }
+
+    for struct_decl in &program.structs {
+        for field in &struct_decl.fields {
+            ensure_type_known(&field.ty, &env.struct_types, &env.enum_types)?;
+        }
+    }
+
     for function in &program.functions {
+        let normalized_return = normalize_user_type(
+            &function.return_type,
+            &env.struct_types,
+            &env.enum_types,
+        )?;
+        let mut normalized_params = Vec::new();
+        for param in &function.params {
+            normalized_params.push(normalize_user_type(
+                &param.ty,
+                &env.struct_types,
+                &env.enum_types,
+            )?);
+        }
         if env.functions.contains_key(&function.name) {
             return Err(TypeError {
                 message: format!("fonction '{}' déjà déclarée", function.name),
@@ -31,17 +89,23 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
         env.functions.insert(
             function.name.clone(),
             FunctionSignature {
-                params: function.params.iter().map(|p| p.ty.clone()).collect(),
-                return_type: function.return_type.clone(),
+                params: normalized_params,
+                return_type: normalized_return,
             },
         );
     }
 
     let mut inferred = HashMap::new();
     for function in &program.functions {
+        let normalized_return = normalize_user_type(
+            &function.return_type,
+            &env.struct_types,
+            &env.enum_types,
+        )?;
         let mut fn_env = env.clone_empty_scope();
         fn_env.locals.push(HashMap::new());
         for param in &function.params {
+            let param_type = normalize_user_type(&param.ty, &env.struct_types, &env.enum_types)?;
             if fn_env.locals.last().unwrap().contains_key(&param.name) {
                 return Err(TypeError {
                     message: format!(
@@ -59,7 +123,7 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
             fn_env.locals.last_mut().unwrap().insert(
                 param.name.clone(),
                 Symbol {
-                    ty: param.ty.clone(),
+                    ty: param_type,
                     mutable: false,
                     used: false,
                     line: 0,
@@ -67,17 +131,17 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
                 },
             );
         }
-        fn_env.return_type = Some(function.return_type.clone());
+        fn_env.return_type = Some(normalized_return);
         let body_completion = infer_block(&function.body, &mut fn_env, &env.functions, &mut inferred)?;
         let body_ty = body_completion.ty();
-        if body_ty != function.return_type {
-            let detail = type_mismatch_detail(&function.return_type, &body_ty)
+        if body_ty != normalized_return {
+            let detail = type_mismatch_detail(&normalized_return, &body_ty)
                 .map(|extra| format!(" ({extra})"))
                 .unwrap_or_default();
             return Err(TypeError {
                 message: format!(
                     "la fonction '{}' attend un retour '{}', mais le bloc retourne '{}'{}",
-                    function.name, function.return_type, body_ty, detail
+                    function.name, normalized_return, body_ty, detail
                 ),
                 line: 0,
                 column: 0,
@@ -100,6 +164,85 @@ pub fn check(program: &Program, _source: &str) -> Result<HashMap<usize, Type>, T
     }
 
     Ok(inferred)
+}
+
+fn ensure_type_known(
+    ty: &Type,
+    struct_types: &HashSet<String>,
+    enum_types: &HashSet<String>,
+) -> Result<(), TypeError> {
+    match ty {
+        Type::Array(inner, _) => ensure_type_known(inner, struct_types, enum_types),
+        Type::Pointer(inner) => ensure_type_known(inner, struct_types, enum_types),
+        Type::Struct(name) => {
+            if struct_types.contains(name) || enum_types.contains(name) {
+                Ok(())
+            } else {
+                Err(TypeError {
+                    message: format!("type inconnu: '{}'", name),
+                    line: 0,
+                    column: 0,
+                    suggestion: Some(format!(
+                        "Déclarez un type '{}' avec `struct` ou `enum` avant de l'utiliser.",
+                        name
+                    )),
+                })
+            }
+        }
+        Type::Enum(name) => {
+            if enum_types.contains(name) || struct_types.contains(name) {
+                Ok(())
+            } else {
+                Err(TypeError {
+                    message: format!("type inconnu: '{}'", name),
+                    line: 0,
+                    column: 0,
+                    suggestion: Some(format!(
+                        "Déclarez un type '{}' avec `enum` avant de l'utiliser.",
+                        name
+                    )),
+                })
+            }
+        }
+        _ => Ok(()),
+    }
+}
+
+fn normalize_user_type(
+    ty: &Type,
+    struct_types: &HashSet<String>,
+    enum_types: &HashSet<String>,
+) -> Result<Type, TypeError> {
+    let normalized = match ty {
+        Type::Array(inner, len) => Type::Array(
+            Box::new(normalize_user_type(inner, struct_types, enum_types)?),
+            *len,
+        ),
+        Type::Pointer(inner) => Type::Pointer(Box::new(normalize_user_type(
+            inner,
+            struct_types,
+            enum_types,
+        )?)),
+        Type::Struct(name) => {
+            if enum_types.contains(name) {
+                Type::Enum(name.clone())
+            } else if struct_types.contains(name) {
+                Type::Struct(name.clone())
+            } else {
+                return Err(TypeError {
+                    message: format!("type inconnu: '{}'", name),
+                    line: 0,
+                    column: 0,
+                    suggestion: Some(format!(
+                        "Déclarez un type '{}' avant de l'utiliser.",
+                        name
+                    )),
+                });
+            }
+        }
+        other => other.clone(),
+    };
+    Ok(normalized)
 }
 
 #[cfg(test)]
@@ -242,12 +385,37 @@ mod tests {
         let err = check(&program, "").unwrap_err();
         assert!(err.message.contains("incohérentes"));
     }
+
+    #[test]
+    fn struct_type_can_be_used_in_function_signature() {
+        let program = parse_program(
+            "struct Point { x: i32; y: i32; } fn main(p: Point) -> Point { return p; }",
+        );
+        assert!(check(&program, "").is_ok());
+    }
+
+    #[test]
+    fn enum_type_can_be_used_in_function_signature() {
+        let program = parse_program(
+            "enum Color { Red, Green, Blue } fn main(c: Color) -> Color { return c; }",
+        );
+        assert!(check(&program, "").is_ok());
+    }
+
+    #[test]
+    fn unknown_user_type_is_rejected() {
+        let program = parse_program("fn main(p: Unknown) -> Unknown { return p; }");
+        let err = check(&program, "").unwrap_err();
+        assert!(err.message.contains("type inconnu"));
+    }
 }
 
 #[derive(Clone)]
 struct TypeEnvironment {
     locals: Vec<HashMap<String, Symbol>>,
     functions: HashMap<String, FunctionSignature>,
+    struct_types: HashSet<String>,
+    enum_types: HashSet<String>,
     return_type: Option<Type>,
     saw_return: bool,
 }
@@ -281,6 +449,8 @@ impl TypeEnvironment {
         Self {
             locals: vec![HashMap::new()],
             functions: HashMap::new(),
+            struct_types: HashSet::new(),
+            enum_types: HashSet::new(),
             return_type: None,
             saw_return: false,
         }
@@ -288,11 +458,15 @@ impl TypeEnvironment {
 
     fn clone_empty_scope(&self) -> Self {
         let functions = self.functions.clone();
+        let struct_types = self.struct_types.clone();
+        let enum_types = self.enum_types.clone();
         let return_type = self.return_type.clone();
         let saw_return = self.saw_return;
         Self {
             locals: vec![HashMap::new()],
             functions,
+            struct_types,
+            enum_types,
             return_type,
             saw_return,
         }
@@ -439,7 +613,8 @@ fn infer_expr(
             }
             let init_ty = infer_expr(value, env, functions, inferred)?.ty();
             if let Some(ann) = ty {
-                if &init_ty != ann {
+                let normalized_ann = normalize_user_type(ann, &env.struct_types, &env.enum_types)?;
+                if init_ty != normalized_ann {
                     let detail = type_mismatch_detail(ann, &init_ty)
                         .map(|extra| format!(" ({extra})"))
                         .unwrap_or_default();
@@ -456,16 +631,24 @@ fn infer_expr(
                         )),
                     });
                 }
+                env.define(
+                    name.clone(),
+                    normalized_ann.clone(),
+                    *mutable,
+                    expr.line,
+                    expr.column,
+                );
+                ExprCompletion::Value(normalized_ann)
+            } else {
+                env.define(
+                    name.clone(),
+                    init_ty.clone(),
+                    *mutable,
+                    expr.line,
+                    expr.column,
+                );
+                ExprCompletion::Value(init_ty)
             }
-            let final_ty = ty.clone().unwrap_or(init_ty);
-            env.define(
-                name.clone(),
-                final_ty.clone(),
-                *mutable,
-                expr.line,
-                expr.column,
-            );
-            ExprCompletion::Value(final_ty)
         }
         ExprKind::Assign { name, value } => {
             let rhs_ty = infer_expr(value, env, functions, inferred)?.ty();
@@ -914,6 +1097,26 @@ fn infer_expr(
                 Type::I32 | Type::U32 | Type::F32 => 4,
                 Type::I64 | Type::U64 | Type::F64 => 8,
                 Type::Pointer(inner) => 8 + size_of_type(inner.as_ref()).unwrap_or(8),
+                Type::Struct(name) => {
+                    return Err(TypeError {
+                        message: format!("sizeof ne supporte pas encore le type struct '{name}'"),
+                        line: expr.line,
+                        column: expr.column,
+                        suggestion: Some(
+                            "Utilisez la taille d'un type scalaire ou d'un pointeur.".to_string(),
+                        ),
+                    });
+                }
+                Type::Enum(name) => {
+                    return Err(TypeError {
+                        message: format!("sizeof ne supporte pas encore le type enum '{name}'"),
+                        line: expr.line,
+                        column: expr.column,
+                        suggestion: Some(
+                            "Utilisez la taille d'un type scalaire ou d'un pointeur.".to_string(),
+                        ),
+                    });
+                }
             };
             inferred.insert(expr.id, Type::I64);
             ExprCompletion::Value(Type::I64)
@@ -1085,6 +1288,7 @@ fn size_of_type(ty: &Type) -> Option<i64> {
         Type::I16 | Type::U16 => Some(2),
         Type::I32 | Type::U32 | Type::F32 => Some(4),
         Type::I64 | Type::U64 | Type::F64 => Some(8),
+        Type::Struct(_) | Type::Enum(_) => None,
         Type::Pointer(_) => Some(8),
         Type::Array(inner, len) => {
             size_of_type(inner).and_then(|inner_size| inner_size.checked_mul(*len as i64))

@@ -92,6 +92,10 @@ impl Lexer {
                     self.bump();
                     TokenKind::RBracket
                 }
+                '.' => {
+                    self.bump();
+                    TokenKind::Dot
+                }
                 '=' => {
                     self.bump();
                     if self.match_next('=') {
@@ -278,6 +282,8 @@ impl Lexer {
         let txt: String = self.chars[start..self.idx].iter().collect();
         match txt.as_str() {
             "fn" => Ok(TokenKind::Fn),
+            "struct" => Ok(TokenKind::Struct),
+            "enum" => Ok(TokenKind::Enum),
             "let" => Ok(TokenKind::Let),
             "mut" => Ok(TokenKind::Mut),
             "import" => Ok(TokenKind::Import),

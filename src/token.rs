@@ -10,6 +10,8 @@ pub struct Token {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Fn,
+    Struct,
+    Enum,
     Let,
     Mut,
     Import,
@@ -66,6 +68,7 @@ pub enum TokenKind {
     RBrace,
     LBracket,
     RBracket,
+    Dot,
     Colon,
     Arrow,
     Comma,

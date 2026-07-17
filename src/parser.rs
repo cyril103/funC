@@ -1,5 +1,6 @@
 use crate::ast::{
-    BinaryOp, Block, Expr, ExprKind, Function, Parameter, Program, Type,
+    BinaryOp, Block, EnumDecl, Expr, ExprKind, Function, Parameter, Program, StructDecl,
+    StructField, Type,
 };
 use crate::lexer::ParseError;
 use crate::token::{Token, TokenKind};
@@ -21,18 +22,71 @@ impl Parser {
 
     pub fn parse_program(mut self) -> Result<Program, ParseError> {
         let mut functions = Vec::new();
+        let mut structs = Vec::new();
+        let mut enums = Vec::new();
         let mut imports = Vec::new();
         while !self.check(TokenKind::Eof) {
             match self.current_kind() {
                 Some(TokenKind::Import) => {
                     imports.push(self.parse_import()?);
                 }
+                Some(TokenKind::Struct) => {
+                    structs.push(self.parse_struct_decl()?);
+                }
+                Some(TokenKind::Enum) => {
+                    enums.push(self.parse_enum_decl()?);
+                }
                 _ => {
                     functions.push(self.parse_function()?);
                 }
             }
         }
-        Ok(Program { functions, imports })
+        Ok(Program {
+            functions,
+            structs,
+            enums,
+            imports,
+        })
+    }
+
+    fn parse_struct_decl(&mut self) -> Result<StructDecl, ParseError> {
+        self.expect(TokenKind::Struct)?;
+        let name = self.consume_identifier("nom de structure")?;
+        self.expect(TokenKind::LBrace)?;
+        let mut fields = Vec::new();
+        while !self.check(TokenKind::RBrace) {
+            let field_name = self.consume_identifier("nom de champ")?;
+            self.expect(TokenKind::Colon)?;
+            let ty = self.parse_type()?;
+            self.expect(TokenKind::Semi)?;
+            fields.push(StructField {
+                name: field_name,
+                ty,
+            });
+        }
+        self.expect(TokenKind::RBrace)?;
+        Ok(StructDecl { name, fields })
+    }
+
+    fn parse_enum_decl(&mut self) -> Result<EnumDecl, ParseError> {
+        self.expect(TokenKind::Enum)?;
+        let name = self.consume_identifier("nom d'énumération")?;
+        self.expect(TokenKind::LBrace)?;
+        let mut variants = Vec::new();
+        if self.check(TokenKind::RBrace) {
+            self.bump();
+        } else {
+            loop {
+                variants.push(self.consume_identifier("nom de variante")?);
+                if self.check(TokenKind::Comma) {
+                    self.bump();
+                } else {
+                    break;
+                }
+            }
+            self.expect(TokenKind::RBrace)?;
+        }
+        Ok(EnumDecl { name, variants })
     }
 
     fn parse_import(&mut self) -> Result<String, ParseError> {
@@ -169,6 +223,9 @@ impl Parser {
                 Some(Token {
                     kind: TokenKind::Void, ..
                 }) => Type::Void,
+                Some(Token {
+                    kind: TokenKind::Identifier(name), ..
+                }) => Type::Struct(name),
                 Some(tok) => {
                     return Err(ParseError {
                         message: format!("type inattendu {:?}", tok.kind),
@@ -957,5 +1014,35 @@ mod tests {
             },
             _ => panic!("première expression doit être return"),
         }
+    }
+
+    #[test]
+    fn parse_struct_declaration() {
+        let source = "struct Point { x: i32; y: *i8; } fn main() -> void { 0 }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        assert_eq!(program.structs.len(), 1);
+        let struct_decl = &program.structs[0];
+        assert_eq!(struct_decl.name, "Point");
+        assert_eq!(struct_decl.fields.len(), 2);
+        assert_eq!(struct_decl.fields[0].name, "x");
+        assert_eq!(struct_decl.fields[0].ty, Type::I32);
+        assert_eq!(
+            struct_decl.fields[1].ty,
+            Type::Pointer(Box::new(Type::I8))
+        );
+    }
+
+    #[test]
+    fn parse_enum_declaration() {
+        let source = "enum Color { Red, Green, Blue } fn main() -> void { 0 }";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+
+        assert_eq!(program.enums.len(), 1);
+        let enum_decl = &program.enums[0];
+        assert_eq!(enum_decl.name, "Color");
+        assert_eq!(enum_decl.variants, vec!["Red", "Green", "Blue"]);
     }
 }
